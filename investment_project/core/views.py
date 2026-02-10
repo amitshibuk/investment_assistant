@@ -1,7 +1,3 @@
-from django.shortcuts import render
-
-# Create your views here.
-# core/views.py
 import json
 import os
 import google.generativeai as genai
@@ -9,9 +5,6 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
-
-# Import your src modules
-# Note: Ensure core/src has an __init__.py file, or adjust import path
 from .src.prediction_model import load_and_predict
 
 # --- Configuration ---
@@ -23,33 +16,41 @@ TICKER_MAP = {
     "Amazon": "AMZN", "Microsoft": "MSFT", "Meta": "META", "Netflix": "NFLX"
 }
 
-# --- Helper Functions (Same as Flask) ---
 def get_entities_with_llm(query):
+    """
+    Revised prompt to catch implicit prediction requests (e.g., just "Tesla").
+    """
     system_prompt = """
     You are an expert at understanding financial queries. Extract these entities:
-    - task: The user's goal (e.g., 'predict', 'compare').
+    - task: The user's goal. If the user mentions a company name but no specific verb, assume 'predict'.
     - metric: The financial metric (e.g., 'stock price').
     - company: The company name.
     - time_period: A dictionary with 'value' (int) and 'unit' (string).
+    
     Return ONLY a JSON object.
     """
     try:
         response = model.generate_content(
             f"{system_prompt}\n\nQuery: {query}",
-            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json"
+            )
         )
         return json.loads(response.text)
     except Exception as e:
         return {"error": str(e)}
 
 def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data):
+    """
+    Revised prompt for moderate length and better formatting.
+    """
     start_price = predictions_data[0]['predicted_close']
     end_price = predictions_data[-1]['predicted_close']
     change = end_price - start_price
     percent_change = (change / start_price) * 100 if start_price != 0 else 0
     
     trend = "an upward" if change > 0 else "a downward"
-    if abs(percent_change) < 1: trend = "a relatively stable"
+    if abs(percent_change) < 1: trend = "relatively stable"
 
     prediction_details = (
         f"Company: {company} ({ticker})\n"
@@ -58,13 +59,16 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
         f"Start: ${start_price:.2f}, End: ${end_price:.2f}\n"
     )
 
+    # NEW: Instructions for Moderate Length
     prompt = f"""
-    You are a financial analyst. Summarize these stock predictions concisely:
-    {prediction_details}
+    You are a financial analyst. Summarize these stock predictions.
+    Data: {prediction_details}
+    
     Requirements:
-    1. Mention the trend, start/end prices, and % change.
-    2. Tone: Informative but cautious.
-    3. MANDATORY: End with "Disclaimer: This is an AI-generated prediction and not financial advice."
+    1. Length: Moderate (3 to 5 sentences). Do not be too brief, but do not ramble.
+    2. Formatting: Use bolding for key figures (prices, percentages).
+    3. Content: Explain the trend and the start/end values clearly.
+    4. MANDATORY: End with "Disclaimer: This is an AI-generated prediction and not financial advice."
     """
     try:
         response = model.generate_content(prompt)
@@ -73,12 +77,9 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
         return "Could not generate summary."
 
 # --- Views ---
-
 def home(request):
     return render(request, 'core/index.html')
 
-# We use csrf_exempt for simplicity in migration, 
-# but for production, you should pass the CSRF token in the JS fetch headers.
 @csrf_exempt 
 def predict(request):
     if request.method == 'POST':
@@ -91,52 +92,80 @@ def predict(request):
         if not query:
             return JsonResponse({"error": "Query required"}, status=400)
         
+        chat_history = request.session.get('gemini_chat_history', [])
+
         # 1. Extract Entities
         entities = get_entities_with_llm(query)
-        if "error" in entities:
-            return JsonResponse(entities, status=500)
-
+        
         task = entities.get('task')
-        metric = entities.get('metric')
         company = entities.get('company')
         time_period = entities.get('time_period')
 
-        if task == 'predict' and 'stock' in str(metric) and company and time_period:
+        # 2. Logic Update: Be more permissive. 
+        # If a company is found, we assume prediction unless explicitly stated otherwise.
+        is_prediction_task = (task == 'predict') or (company and not task) or (company and task == 'unknown')
+
+        if is_prediction_task and company:
             ticker = TICKER_MAP.get(company.capitalize())
-            if not ticker:
-                return JsonResponse({"error": f"Company '{company}' not supported."}, status=400)
-
-            # Parse days
-            days_ahead = 1
-            if time_period:
-                unit = time_period.get('unit', 'day')
-                val = time_period.get('value', 1)
-                if 'week' in unit: days_ahead = val * 7
-                elif 'month' in unit: days_ahead = val * 30
-                else: days_ahead = val
             
-            # 3. Get Prediction
-            try:
-                predictions_list = load_and_predict(ticker, days_ahead)
-            except Exception as e:
-                 return JsonResponse({"error": str(e)}, status=500)
+            if ticker:
+                days_ahead = 7 # Default
+                if time_period:
+                    unit = time_period.get('unit', 'day')
+                    val = time_period.get('value', 1)
+                    if 'week' in unit: days_ahead = val * 7
+                    elif 'month' in unit: days_ahead = val * 30
+                    else: days_ahead = val
 
-            formatted_predictions = [
-                {"day": i+1, "predicted_close": round(p, 2)}
-                for i, p in enumerate(predictions_list)
-            ]
+                try:
+                    predictions_list = load_and_predict(ticker, days_ahead)
+                except Exception as e:
+                     return JsonResponse({"error": str(e)}, status=500)
 
-            # 4. Summarize
-            summary = summarize_predictions_with_llm(company, ticker, days_ahead, formatted_predictions)
+                formatted_predictions = [
+                    {"day": i+1, "predicted_close": round(p, 2)}
+                    for i, p in enumerate(predictions_list)
+                ]
 
+                summary = summarize_predictions_with_llm(company, ticker, days_ahead, formatted_predictions)
+
+                # Update history with structured data context
+                chat_history.append({"role": "user", "parts": [query]})
+                chat_history.append({"role": "model", "parts": [summary]})
+                request.session['gemini_chat_history'] = chat_history
+
+                return JsonResponse({
+                    "company": company,
+                    "ticker": ticker,
+                    "days_ahead": days_ahead,
+                    "predictions": formatted_predictions,
+                    "summary": summary,
+                    "is_follow_up": True 
+                })
+
+        # 3. Standard Chat Fallback
+        try:
+            chat = model.start_chat(history=chat_history)
+            
+            # Helper to enforce length on general chat too
+            final_query = f"{query} (Please keep the answer moderate in length, approx 3-5 sentences)"
+            
+            response = chat.send_message(final_query)
+            
+            updated_history = []
+            for m in chat.history:
+                updated_history.append({
+                    'role': m.role, 
+                    'parts': [part.text for part in m.parts]
+                })
+            request.session['gemini_chat_history'] = updated_history
+            
             return JsonResponse({
-                "company": company,
-                "ticker": ticker,
-                "days_ahead": days_ahead,
-                "predictions": formatted_predictions,
-                "summary": summary
+                "summary": response.text,
+                "is_follow_up": True
             })
 
-        return JsonResponse({"message": "Query not understood.", "entities": entities}, status=400)
-    
+        except Exception as e:
+            return JsonResponse({"error": f"Chat Error: {str(e)}"}, status=500)
+
     return JsonResponse({"error": "POST method required"}, status=405)
