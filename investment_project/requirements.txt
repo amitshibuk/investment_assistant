@@ -1,0 +1,16 @@
+yfinance
+pandas
+scikit-learn
+numpy
+tensorflow
+plotly
+django
+fuzzywuzzy
+python-Levenshtein
+python-dateutil
+matplotlib
+tensorflow
+dotenv
+spellchecker
+spacy
+google-generativeai

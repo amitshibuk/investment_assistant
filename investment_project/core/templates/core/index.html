@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Assistant MVP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-2xl p-8 bg-gray-800 rounded-2xl shadow-lg">
+        <h1 class="text-4xl font-bold text-center text-cyan-400 mb-2">Investment Assistant</h1>
+        <p class="text-center text-gray-400 mb-8">Enter a query like "predict apple stock for 7 days"</p>
+
+        <form id="query-form" class="flex flex-col sm:flex-row gap-4 mb-8">
+            <input 
+                type="text" 
+                id="query-input" 
+                placeholder="e.g., predict google stock for 30 days"
+                class="flex-grow p-4 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+            >
+            <button 
+                type="submit" 
+                class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-4 px-6 rounded-lg transition"
+            >
+                Submit
+            </button>
+        </form>
+
+        <div id="results-container">
+            <div id="loader" class="hidden text-center">
+                <svg class="animate-spin h-8 w-8 text-cyan-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2 text-gray-400">Fetching prediction...</p>
+            </div>
+            
+            <div id="error-message" class="hidden bg-red-900 border border-red-700 text-red-300 p-4 rounded-lg"></div>
+
+            <div id="prediction-results" class="hidden">
+                <h2 class="text-2xl font-bold mb-4">Prediction for <span id="company-name" class="text-cyan-400"></span></h2>
+                
+                <div class="mb-6 bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-200 mb-2">Summary</h3>
+                    <p id="prediction-summary" class="text-gray-300 whitespace-pre-line"></p>
+                </div>
+                
+                <div class="bg-gray-700 rounded-lg p-4">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="border-b border-gray-600">
+                                <th class="p-2">Day</th>
+                                <th class="p-2 text-right">Predicted Close (USD)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prediction-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('query-form');
+        const input = document.getElementById('query-input');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('error-message');
+        const predictionResults = document.getElementById('prediction-results');
+        const companyName = document.getElementById('company-name');
+        const tableBody = document.getElementById('prediction-table-body');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = input.value.trim();
+            if (!query) return;
+
+            // Reset UI
+            loader.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            predictionResults.classList.add('hidden');
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    // Include detected entities in error for debugging
+                    let errorText = result.error || 'An unknown error occurred.';
+                    if (result.detected_entities) {
+                        errorText += ` (Detected: ${JSON.stringify(result.detected_entities)})`;
+                    }
+                    throw new Error(errorText);
+                }
+                
+                displayResults(result);
+
+            } catch (err) {
+                displayError(err.message);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        });
+
+        function displayResults(data) {
+            // Get the new summary element
+            const summaryElement = document.getElementById('prediction-summary');
+
+            companyName.textContent = `${data.company} (${data.ticker})`;
+            tableBody.innerHTML = ''; // Clear previous results
+
+            // NEW: Populate the summary text
+            if (data.summary) {
+                summaryElement.textContent = data.summary;
+            } else {
+                summaryElement.textContent = 'Summary could not be generated.';
+            }
+
+            data.predictions.forEach(p => {
+                const row = `
+                    <tr class="border-b border-gray-800 last:border-b-0">
+                        <td class="p-2">${p.day}</td>
+                        <td class="p-2 text-right font-mono">$${p.predicted_close.toFixed(2)}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+            predictionResults.classList.remove('hidden');
+        }
+
+        function displayError(message) {
+            errorMessage.textContent = `Error: ${message}`;
+            errorMessage.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

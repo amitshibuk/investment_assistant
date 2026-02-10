@@ -1,0 +1,33 @@
+# --- Environment & API Keys ---
+.env
+*.key
+*.pem
+
+# --- Python cache files ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environment ---
+venv/
+.env/
+env/
+.venv/
+
+# --- IDE / Editor files ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+
+# --- Build artifacts ---
+dist/
+build/
+*.egg-info/
+
