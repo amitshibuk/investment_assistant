@@ -18,7 +18,7 @@ TICKER_MAP = {
 
 def get_entities_with_llm(query):
     """
-    Revised prompt to catch implicit prediction requests (e.g., just "Tesla").
+    Extracts structured entities to determine if the user wants a specific prediction task.
     """
     system_prompt = """
     You are an expert at understanding financial queries. Extract these entities:
@@ -42,7 +42,7 @@ def get_entities_with_llm(query):
 
 def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data):
     """
-    Revised prompt for moderate length and better formatting.
+    Generates a natural language summary of the LSTM model's output.
     """
     start_price = predictions_data[0]['predicted_close']
     end_price = predictions_data[-1]['predicted_close']
@@ -59,7 +59,6 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
         f"Start: ${start_price:.2f}, End: ${end_price:.2f}\n"
     )
 
-    # NEW: Instructions for Moderate Length
     prompt = f"""
     You are a financial analyst. Summarize these stock predictions.
     Data: {prediction_details}
@@ -101,21 +100,29 @@ def predict(request):
         company = entities.get('company')
         time_period = entities.get('time_period')
 
-        # 2. Logic Update: Be more permissive. 
-        # If a company is found, we assume prediction unless explicitly stated otherwise.
+        # 2. Check if we should trigger the LSTM Model
         is_prediction_task = (task == 'predict') or (company and not task) or (company and task == 'unknown')
 
         if is_prediction_task and company:
             ticker = TICKER_MAP.get(company.capitalize())
             
             if ticker:
-                days_ahead = 7 # Default
+                # --- NEW FIX: Session Memory for Timeframe ---
+                # Retrieve the last used timeframe, defaulting to 7 if it's the first query
+                last_days_ahead = request.session.get('last_days_ahead', 7)
+                days_ahead = last_days_ahead
+
+                # Override ONLY if the user explicitly provided a new timeframe in this query
                 if time_period:
                     unit = time_period.get('unit', 'day')
                     val = time_period.get('value', 1)
                     if 'week' in unit: days_ahead = val * 7
                     elif 'month' in unit: days_ahead = val * 30
                     else: days_ahead = val
+
+                # Save the timeframe back to the session for the next follow-up
+                request.session['last_days_ahead'] = days_ahead
+                # ----------------------------------------------
 
                 try:
                     predictions_list = load_and_predict(ticker, days_ahead)
@@ -129,7 +136,7 @@ def predict(request):
 
                 summary = summarize_predictions_with_llm(company, ticker, days_ahead, formatted_predictions)
 
-                # Update history with structured data context
+                # Update conversation history with structured data context
                 chat_history.append({"role": "user", "parts": [query]})
                 chat_history.append({"role": "model", "parts": [summary]})
                 request.session['gemini_chat_history'] = chat_history
@@ -143,7 +150,7 @@ def predict(request):
                     "is_follow_up": True 
                 })
 
-        # 3. Standard Chat Fallback
+        # 3. Standard Chat Fallback (for non-prediction questions)
         try:
             chat = model.start_chat(history=chat_history)
             
