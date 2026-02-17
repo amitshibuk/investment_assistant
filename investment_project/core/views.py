@@ -5,12 +5,18 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from dotenv import load_dotenv
 
 # --- Imports from your src folder ---
 # These are your core logic modules for the LSTM predictions and Plotly visualizations.
 from .src.prediction_model import load_and_predict
-from .src.visualizer import generate_interactive_chart
+# ... (existing imports)
+from .src.visualizer import generate_interactive_chart, generate_candlestick_chart
+
+# ... (rest of file)
+
+
 
 # --- Configuration ---
 load_dotenv()
@@ -91,7 +97,7 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
     except Exception as e:
         return "Could not generate summary."
 
-from django.contrib.auth.decorators import login_required
+
 
 # ==========================================
 #  MAIN VIEWS
@@ -256,20 +262,14 @@ def add_to_portfolio(request):
 def get_portfolio_data(request, ticker):
     """
     API to fetch chart data for a specific ticker.
-    Reuses existing prediction & visualization logic.
+    Uses Candlestick chart and skips AI prediction.
     """
     try:
-        # Default to 30 days forecast for portfolio view to make it look interesting
-        days_ahead = 30
+        # Use the new Candlestick generator
+        chart_data = generate_candlestick_chart(ticker)
         
-        # 1. Run Prediction
-        predictions_list = load_and_predict(ticker, days_ahead)
-        
-        # 2. Generate Chart
-        chart_data = generate_interactive_chart(ticker, predictions_list)
-        
-        # 3. Generate Summary (Optional, can be added later)
-        # summary = summarize_predictions_with_llm(ticker, ticker, days_ahead, ...)
+        if not chart_data:
+             return JsonResponse({"error": "No data found"}, status=404)
 
         return JsonResponse({
             "ticker": ticker,

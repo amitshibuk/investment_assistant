@@ -86,14 +86,24 @@
         <!-- Top Bar -->
         <div
             class="h-16 border-b border-gray-700 flex items-center justify-between px-6 bg-gray-800/50 backdrop-blur-sm z-10">
-            <div id="header-info" class="hidden">
+            <div id="header-info" class="hidden flex items-center gap-4">
                 <h2 id="header-ticker" class="text-xl font-bold text-white"></h2>
                 <span class="text-xs text-green-400 flex items-center gap-1">
                     <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Live Analysis
                 </span>
+                <button onclick="updateCurrentTicker()"
+                    class="ml-4 px-3 py-1 bg-gray-700 hover:bg-gray-600 text-cyan-400 text-xs rounded-lg border border-gray-600 hover:border-cyan-500 transition-all flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                        </path>
+                    </svg>
+                    Update Data
+                </button>
             </div>
             <div class="flex items-center gap-4">
-                <div class="text-sm text-gray-400">Timeframe: <span class="text-cyan-400 font-bold">30 Days</span></div>
+                <div class="text-sm text-gray-400">Timeframe: <span class="text-cyan-400 font-bold">6 Months</span>
+                </div>
             </div>
         </div>
 
@@ -125,7 +135,16 @@
     </main>
 
     <script>
+        let currentTicker = null;
+
+        function updateCurrentTicker() {
+            if (currentTicker) {
+                loadTicker(currentTicker);
+            }
+        }
+
         async function loadTicker(ticker, btnElement) {
+            currentTicker = ticker;
             // UI Updates
             document.querySelectorAll('.ticker-btn').forEach(b => {
                 b.classList.remove('bg-gray-700', 'border-cyan-500/50', 'ring-1', 'ring-cyan-500/50');
@@ -136,9 +155,23 @@
                 btnElement.classList.remove('border-transparent');
             }
 
+            // Highlight list item if button wasn't passed (e.g. refresh)
+            if (!btnElement) {
+                // Try to find the button
+                const buttons = document.querySelectorAll('.ticker-btn');
+                for (let btn of buttons) {
+                    if (btn.textContent.includes(ticker)) {
+                        btn.classList.add('bg-gray-700', 'border-cyan-500/50', 'ring-1', 'ring-cyan-500/50');
+                        btn.classList.remove('border-transparent');
+                        break;
+                    }
+                }
+            }
+
             document.getElementById('empty-state').classList.add('hidden');
             document.getElementById('loading-overlay').classList.remove('hidden');
             document.getElementById('header-info').classList.remove('hidden');
+            document.getElementById('header-info').classList.add('flex'); // Ensure flex is added
             document.getElementById('header-ticker').textContent = ticker;
 
             // Clear previous chart
