@@ -147,9 +147,14 @@
                 table.className = "mt-4 bg-gray-800 rounded-lg border border-gray-600 p-3 text-sm";
 
                 table.innerHTML = `
-            <div class="flex justify-between mb-2">
-                <span class="text-cyan-400 font-bold">${data.company} (${data.ticker})</span>
-                <span class="text-gray-400">${data.days_ahead} Day Forecast</span>
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-cyan-400 font-bold">${data.company} (${data.ticker})</span>
+                    <button onclick="addToPortfolio('${data.ticker}')" class="bg-gray-700 hover:bg-gray-600 text-cyan-400 px-2 py-0.5 rounded text-xs border border-cyan-900 transition-colors" title="Add to Portfolio">
+                        + Add
+                    </button>
+                </div>
+                <span class="text-gray-400 text-xs">${data.days_ahead} Day Forecast</span>
             </div>
             <div class="max-h-60 overflow-y-auto">
                 ${data.predictions.map(p => `
@@ -187,6 +192,28 @@
 
         function scrollBottom() {
             chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function addToPortfolio(ticker) {
+            try {
+                const res = await fetch('/add-portfolio/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: ticker })
+                });
+                const data = await res.json();
+                /* Simple toast or alert */
+                if (data.status === 'added') {
+                    alert('✅ ' + data.message);
+                } else if (data.status === 'exists') {
+                    alert('ℹ️ ' + data.message);
+                } else {
+                    alert('❌ Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('❌ Failed to add to portfolio');
+            }
         }
     </script>
 

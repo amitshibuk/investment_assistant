@@ -207,7 +207,73 @@ def predict(request):
                 "is_follow_up": True
             })
 
+
         except Exception as e:
             return JsonResponse({"error": f"Chat Error: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "POST method required"}, status=405)
+
+# ==========================================
+#  PORTFOLIO VIEWS
+# ==========================================
+
+from .models import Portfolio
+
+@login_required
+def portfolio(request):
+    """Renders the portfolio dashboard."""
+    user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
+    return render(request, 'core/portfolio.html', {'portfolio': user_portfolio})
+
+@csrf_exempt
+@login_required
+def add_to_portfolio(request):
+    """Adds a ticker to the user's portfolio."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            ticker = data.get('ticker')
+            if not ticker:
+                return JsonResponse({"error": "Ticker required"}, status=400)
+            
+            # Check if already exists
+            portfolio_item, created = Portfolio.objects.get_or_create(
+                user=request.user, 
+                ticker=ticker.upper()
+            )
+            
+            if created:
+                return JsonResponse({"message": f"{ticker} added to portfolio", "status": "added"})
+            else:
+                return JsonResponse({"message": f"{ticker} already in portfolio", "status": "exists"})
+                
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "POST method required"}, status=405)
+
+@login_required
+def get_portfolio_data(request, ticker):
+    """
+    API to fetch chart data for a specific ticker.
+    Reuses existing prediction & visualization logic.
+    """
+    try:
+        # Default to 30 days forecast for portfolio view to make it look interesting
+        days_ahead = 30
+        
+        # 1. Run Prediction
+        predictions_list = load_and_predict(ticker, days_ahead)
+        
+        # 2. Generate Chart
+        chart_data = generate_interactive_chart(ticker, predictions_list)
+        
+        # 3. Generate Summary (Optional, can be added later)
+        # summary = summarize_predictions_with_llm(ticker, ticker, days_ahead, ...)
+
+        return JsonResponse({
+            "ticker": ticker,
+            "chart_data": chart_data
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
