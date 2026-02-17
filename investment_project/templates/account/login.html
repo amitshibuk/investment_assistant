@@ -1,0 +1,76 @@
+{% extends "account/base_auth.html" %}
+{% load i18n %}
+
+{% block head_title %}{% trans "Sign In" %}{% endblock %}
+{% block auth_heading %}{% trans "Welcome back! Please sign in to continue." %}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Google Login -->
+    <a href="/accounts/google/login/"
+        class="flex items-center justify-center w-full px-4 py-3 bg-white text-gray-900 rounded-xl font-semibold hover:bg-gray-100 transition-colors focus:ring-4 focus:ring-gray-600 focus:outline-none">
+        <span class="mr-3 font-bold text-xl text-blue-500">G</span>
+        Sign in with Google
+    </a>
+
+    <div class="relative flex items-center justify-center py-2">
+        <div class="h-px bg-gray-700 w-full absolute"></div>
+        <span class="bg-gray-800 px-3 text-sm text-gray-500 relative z-10">Or continue with email</span>
+    </div>
+
+    <!-- Email Login Form -->
+    <form class="space-y-4" method="POST" action="{% url 'account_login' %}">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="text-red-400 text-sm bg-red-900/20 p-3 rounded-lg border border-red-900/50">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div>
+            <label for="{{ form.login.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">{% trans
+                "Email" %}</label>
+            <input type="{{ form.login.field.widget.input_type }}" name="{{ form.login.name }}"
+                id="{{ form.login.id_for_label }}"
+                class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                placeholder="Enter your email" {% if form.login.value %}value="{{ form.login.value }}" {% endif %}
+                required>
+            {% if form.login.errors %}
+            <p class="text-red-400 text-xs mt-1">{{ form.login.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        <div>
+            <div class="flex justify-between items-center mb-1">
+                <label for="{{ form.password.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">{%
+                    trans "Password" %}</label>
+                <a href="{% url 'account_reset_password' %}" class="text-xs text-cyan-400 hover:text-cyan-300">Forgot
+                    password?</a>
+            </div>
+            <input type="password" name="{{ form.password.name }}" id="{{ form.password.id_for_label }}"
+                class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                placeholder="Enter your password" required>
+            {% if form.password.errors %}
+            <p class="text-red-400 text-xs mt-1">{{ form.password.errors.0 }}</p>
+            {% endif %}
+        </div>
+
+        {% if redirect_field_value %}
+        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+        {% endif %}
+
+        <button type="submit"
+            class="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition-colors focus:ring-4 focus:ring-cyan-900 focus:outline-none">
+            {% trans "Sign In" %}
+        </button>
+    </form>
+
+    <div class="text-center text-sm text-gray-400">
+        {% trans "Don't have an account?" %}
+        <a href="{{ signup_url }}" class="text-cyan-400 hover:text-cyan-300 font-medium">{% trans "Sign Up" %}</a>
+    </div>
+</div>
+{% endblock %}

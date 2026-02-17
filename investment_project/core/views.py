@@ -5,12 +5,18 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from dotenv import load_dotenv
 
 # --- Imports from your src folder ---
 # These are your core logic modules for the LSTM predictions and Plotly visualizations.
 from .src.prediction_model import load_and_predict
-from .src.visualizer import generate_interactive_chart
+# ... (existing imports)
+from .src.visualizer import generate_interactive_chart, generate_candlestick_chart
+
+# ... (rest of file)
+
+
 
 # --- Configuration ---
 load_dotenv()
@@ -91,10 +97,18 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
     except Exception as e:
         return "Could not generate summary."
 
+
+
 # ==========================================
 #  MAIN VIEWS
 # ==========================================
 
+@login_required
+def landing(request):
+    """Renders the dashboard landing page."""
+    return render(request, 'core/landing.html')
+
+@login_required
 def home(request):
     """Renders the main chat interface."""
     return render(request, 'core/index.html')
@@ -199,7 +213,67 @@ def predict(request):
                 "is_follow_up": True
             })
 
+
         except Exception as e:
             return JsonResponse({"error": f"Chat Error: {str(e)}"}, status=500)
 
     return JsonResponse({"error": "POST method required"}, status=405)
+
+# ==========================================
+#  PORTFOLIO VIEWS
+# ==========================================
+
+from .models import Portfolio
+
+@login_required
+def portfolio(request):
+    """Renders the portfolio dashboard."""
+    user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
+    return render(request, 'core/portfolio.html', {'portfolio': user_portfolio})
+
+@csrf_exempt
+@login_required
+def add_to_portfolio(request):
+    """Adds a ticker to the user's portfolio."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            ticker = data.get('ticker')
+            if not ticker:
+                return JsonResponse({"error": "Ticker required"}, status=400)
+            
+            # Check if already exists
+            portfolio_item, created = Portfolio.objects.get_or_create(
+                user=request.user, 
+                ticker=ticker.upper()
+            )
+            
+            if created:
+                return JsonResponse({"message": f"{ticker} added to portfolio", "status": "added"})
+            else:
+                return JsonResponse({"message": f"{ticker} already in portfolio", "status": "exists"})
+                
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "POST method required"}, status=405)
+
+@login_required
+def get_portfolio_data(request, ticker):
+    """
+    API to fetch chart data for a specific ticker.
+    Uses Candlestick chart and skips AI prediction.
+    """
+    try:
+        # Use the new Candlestick generator
+        chart_data = generate_candlestick_chart(ticker)
+        
+        if not chart_data:
+             return JsonResponse({"error": "No data found"}, status=404)
+
+        return JsonResponse({
+            "ticker": ticker,
+            "chart_data": chart_data
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

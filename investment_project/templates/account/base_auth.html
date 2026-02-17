@@ -1,0 +1,56 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block head_title %}{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .errorlist {
+            color: #ef4444;
+            font-size: 0.875rem;
+            list-style-type: none;
+            padding: 0;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border border-gray-700">
+
+        <div class="p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-2xl font-bold text-cyan-400 mb-2">Investment Assistant</h1>
+                <p class="text-gray-400 text-sm">{% block auth_heading %}{% endblock %}</p>
+            </div>
+
+            {# MESSAGES COMMENTED OUT FOR DEBUG #}
+            <!-- 
+            {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for message in messages %}
+                <div class="p-3 rounded-lg text-sm">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            -->
+
+            {% block content %}{% endblock %}
+        </div>
+
+        {% block extra_body %}{% endblock %}
+    </div>
+
+</body>
+
+</html>
