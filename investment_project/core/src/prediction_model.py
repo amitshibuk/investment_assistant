@@ -1,122 +1,160 @@
 import yfinance as yf
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
 import numpy as np
+import os
+import joblib  # NEW: For saving/loading the scaler
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, load_model # type: ignore
 from tensorflow.keras.layers import LSTM, Dense # type: ignore
-import os
-from django.conf import settings # Import Django settings
+from django.conf import settings
 
-# Update MODEL_DIR to use absolute path from settings
+# --- Configuration ---
+# Use absolute path to ensure models are found regardless of where code is run
 MODEL_DIR = os.path.join(settings.BASE_DIR, 'models')
 
-# Ensure a 'models' directory exists to save/load models
-if not os.path.exists('models'):
-    os.makedirs('models')
+if not os.path.exists(MODEL_DIR):
+    os.makedirs(MODEL_DIR)
 
-# --- Model Loading & Prediction Logic ---
-MODEL_DIR = "models"
-# The Ticker map is now centralized in app.py, so it's removed from here.
+# ==========================================
+#  TRAINING LOGIC
+# ==========================================
 
-# FIX: The function now accepts a ticker symbol directly.
-def load_and_predict(ticker, days_ahead=7):
-    """
-    Loads a pre-trained model for a given ticker and predicts future stock prices.
-    """
-    if not ticker:
-        raise ValueError("A valid ticker symbol must be provided.")
-
-    model_path = os.path.join(MODEL_DIR, f"{ticker}_model.h5")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"No trained model found for {ticker}. Please run train_models.py")
-
-    # Load the trained model and its scaler
-    model = load_model(model_path)
-    scaler = MinMaxScaler(feature_range=(0, 1))
-
-    # --- Fetch latest data for prediction input ---
-    today = pd.to_datetime('today').strftime('%Y-%m-%d')
-    # Use the provided ticker to download data
-    data = yf.download(ticker, start="2018-01-01", end=today)
-    if data.empty:
-        raise ValueError(f"Could not fetch data for {ticker}")
-
-    features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    dataset = data[features]
-    
-    scaler.fit(dataset)
-    scaled_data = scaler.transform(dataset)
-
-    time_step = 60
-    if len(scaled_data) < time_step:
-        raise ValueError("Not enough historical data to make a prediction.")
-        
-    last_60_days = scaled_data[-time_step:]
-
-    # --- Prediction Logic ---
-    current_seq = last_60_days
-    future_predictions_scaled = []
-    n_features = len(features)
-
-    for _ in range(days_ahead):
-        X_future = current_seq.reshape(1, time_step, n_features)
-        next_pred_scaled = model.predict(X_future, verbose=0)[0, 0]
-        future_predictions_scaled.append(next_pred_scaled)
-
-        new_row = current_seq[-1].copy()
-        new_row[3] = next_pred_scaled # Update 'Close' price
-        current_seq = np.vstack((current_seq[1:], new_row))
-
-    # Inverse transform the 'Close' price predictions
-    dummy_future = np.zeros((len(future_predictions_scaled), n_features))
-    dummy_future[:, 3] = future_predictions_scaled
-    future_prices = scaler.inverse_transform(dummy_future)[:, 3]
-
-    return future_prices.tolist()
-
-def create_dataset_multivariate(dataset, time_step=60):
-    """Creates a dataset for a multivariate time series model."""
+def create_dataset(dataset, time_step=60):
+    """Creates X, y datasets from a single column (Univariate)."""
     X, y = [], []
     for i in range(len(dataset) - time_step - 1):
-        X.append(dataset[i:(i + time_step)])
-        y.append(dataset[i + time_step, 3])  # index 3 = 'Close'
+        X.append(dataset[i:(i + time_step), 0])
+        y.append(dataset[i + time_step, 0])
     return np.array(X), np.array(y)
 
 def train_and_save_model(ticker):
     """
-    Fetches data, trains a multivariate LSTM model, and saves it to a file.
-    This is intended to be run offline periodically.
+    Trains a Univariate LSTM model (Close price only) and saves
+    BOTH the model (.h5) and the scaler (.pkl).
     """
     print(f"--- Starting training for {ticker} ---")
     
-    # 1. Fetch and prepare data
-    data = yf.download(ticker, start="2018-01-01", end=pd.to_datetime('today').strftime('%Y-%m-%d'))
-    features = ['Open', 'High', 'Low', 'Close', 'Volume']
-    dataset = data[features]
+    # 1. Fetch Data
+    # Download more history to ensure better training
+    data = yf.download(ticker, start="2015-01-01", end=pd.to_datetime('today').strftime('%Y-%m-%d'))
     
-    # Normalize features
+    if len(data) < 200:
+        print(f"❌ Not enough data for {ticker}. Skipping.")
+        return
+
+    # 2. Prepare Data (UNIVARIATE FIX)
+    # We only use 'Close' price. This fixes the recursion issue.
+    dataset = data[['Close']].values.astype(float)
+    
+    # 3. Scale Data & SAVE THE SCALER (SCALER FIX)
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(dataset)
 
-    # 2. Create training data
+    # Save the scaler so we can reproduce this scale during prediction
+    scaler_path = os.path.join(MODEL_DIR, f"{ticker}_scaler.pkl")
+    joblib.dump(scaler, scaler_path)
+    print(f"   Scaler saved to {scaler_path}")
+
+    # 4. Create Training Splits
     time_step = 60
-    X_train, y_train = create_dataset_multivariate(scaled_data, time_step)
+    X, y = create_dataset(scaled_data, time_step)
 
-    if len(X_train) == 0:
-        print(f"Not enough data to train a model for {ticker}. Skipping.")
-        return
+    # Reshape for LSTM [samples, time steps, features]
+    # Features = 1 because we are only using 'Close'
+    X = X.reshape(X.shape[0], X.shape[1], 1)
 
-    # 3. Build and train LSTM model
+    # 5. Build LSTM Model
     model = Sequential([
-        LSTM(64, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
-        LSTM(64, return_sequences=False),
-        Dense(32),
+        LSTM(50, return_sequences=True, input_shape=(time_step, 1)),
+        LSTM(50, return_sequences=False),
+        Dense(25),
         Dense(1)
     ])
-    model.compile(optimizer="adam", loss="mean_squared_error")
-    model.fit(X_train, y_train, batch_size=32, epochs=20, verbose=1)
+    
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    
+    # Train
+    model.fit(X, y, batch_size=64, epochs=10, verbose=1)
 
-    # 4. Save the trained model
-    model_path = f'models/{ticker}_model.h5'
+    # 6. Save Model
+    model_path = os.path.join(MODEL_DIR, f"{ticker}_model.h5")
     model.save(model_path)
     print(f"✅ Model for {ticker} trained and saved to {model_path}")
+
+
+# ==========================================
+#  PREDICTION LOGIC
+# ==========================================
+
+def load_and_predict(ticker, days_ahead=7):
+    """
+    Loads the model + scaler and predicts future prices recursively.
+    """
+    if not ticker:
+        raise ValueError("Ticker symbol required.")
+
+    model_path = os.path.join(MODEL_DIR, f"{ticker}_model.h5")
+    scaler_path = os.path.join(MODEL_DIR, f"{ticker}_scaler.pkl")
+
+    # 1. Check if files exist
+    if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+        # Fallback: Try to train it on the fly if missing (optional)
+        print(f"Model/Scaler not found for {ticker}. Training now...")
+        train_and_save_model(ticker)
+        if not os.path.exists(model_path):
+             raise FileNotFoundError(f"Could not train/find model for {ticker}")
+
+    # 2. Load Resources
+    model = load_model(model_path)
+    scaler = joblib.load(scaler_path) # Load the EXACT scaler used in training
+
+    # 3. Get Recent Data
+    # Fetch enough past data to cover the lookback window (60 days)
+    # We fetch 100 days to be safe
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=150)
+    
+    data = yf.download(ticker, start=start_date, end=end_date)
+    
+    if data.empty:
+        raise ValueError(f"No live data found for {ticker}")
+
+    # Prepare input (Must match training structure: 'Close' only)
+    dataset = data[['Close']].values.astype(float)
+    
+    # Scale using the LOADED scaler
+    scaled_data = scaler.transform(dataset)
+
+    time_step = 60
+    if len(scaled_data) < time_step:
+        raise ValueError(f"Not enough recent data for {ticker} (Need 60 days).")
+
+    # Get the last 60 days as the starting point
+    current_batch = scaled_data[-time_step:].reshape(1, time_step, 1)
+    future_predictions_scaled = []
+
+    # 4. Recursive Prediction Loop
+    for _ in range(days_ahead):
+        # next_pred_scaled comes out as a scalar or shape (1,)
+        next_pred_scaled = model.predict(current_batch, verbose=0)[0, 0]
+        
+        future_predictions_scaled.append(next_pred_scaled)
+
+        # CORRECTED DIMENSION HANDLING:
+        # 1. Reshape the prediction to match the feature dimension: (1, 1, 1)
+        new_step = np.array(next_pred_scaled).reshape(1, 1, 1)
+        
+        # 2. Concatenate along the time axis (axis=1) 
+        # current_batch[:, 1:, :] removes the oldest day, keeping it (1, 59, 1)
+        # np.append or np.concatenate adds the new day, making it (1, 60, 1) again
+        current_batch = np.concatenate([current_batch[:, 1:, :], new_step], axis=1)
+
+    # 5. Inverse Transform to get actual Dollar prices
+    # Convert the list of predictions to a NumPy array and reshape to 2D (N rows, 1 column)
+    predictions_reshaped = np.array(future_predictions_scaled).reshape(-1, 1)
+    
+    # Now inverse_transform will work correctly
+    future_prices = scaler.inverse_transform(predictions_reshaped)
+
+    # Flatten back to a simple list for the JSON response: [150.5, 151.2, ...]
+    return future_prices.flatten().tolist()
