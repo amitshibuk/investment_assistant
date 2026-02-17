@@ -1,0 +1,29 @@
+{% extends "account/base_auth.html" %}
+{% load i18n %}
+
+{% block head_title %}{% trans "Verify Your E-mail Address" %}{% endblock %}
+{% block auth_heading %}{% trans "We have sent an e-mail to you for verification." %}{% endblock %}
+
+{% block content %}
+<div class="text-center space-y-6">
+    <div class="bg-gray-700/50 p-6 rounded-xl border border-gray-600">
+        <svg class="w-16 h-16 mx-auto text-cyan-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+            </path>
+        </svg>
+        <p class="text-gray-300">
+            {% blocktrans %}
+            Follow the link provided in the e-mail to finalize the signup process.
+            If you do not see it, please check your spam folder.
+            {% endblocktrans %}
+        </p>
+    </div>
+
+    <div class="text-sm text-gray-400">
+        <a href="{% url 'account_login' %}" class="text-cyan-400 hover:text-cyan-300 font-medium">
+            &larr; {% trans "Back to Sign In" %}
+        </a>
+    </div>
+</div>
+{% endblock %}

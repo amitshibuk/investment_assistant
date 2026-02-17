@@ -91,10 +91,18 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
     except Exception as e:
         return "Could not generate summary."
 
+from django.contrib.auth.decorators import login_required
+
 # ==========================================
 #  MAIN VIEWS
 # ==========================================
 
+@login_required
+def landing(request):
+    """Renders the dashboard landing page."""
+    return render(request, 'core/landing.html')
+
+@login_required
 def home(request):
     """Renders the main chat interface."""
     return render(request, 'core/index.html')

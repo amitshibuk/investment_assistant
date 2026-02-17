@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Investment Assistant</title>
@@ -11,120 +12,141 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
-        .prose strong { color: #22d3ee; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        .prose strong {
+            color: #22d3ee;
+        }
     </style>
 </head>
 
 <body class="bg-gray-900 text-white flex justify-center h-screen p-4">
 
-<div class="w-full max-w-3xl flex flex-col bg-gray-800 rounded-2xl shadow-2xl h-full overflow-hidden">
+    <div class="w-full max-w-3xl flex flex-col bg-gray-800 rounded-2xl shadow-2xl h-full overflow-hidden">
 
-    <!-- Header -->
-    <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-        <h1 class="text-xl font-bold text-cyan-400">Investment Assistant</h1>
-        <button onclick="location.reload()" class="text-xs text-gray-400 hover:text-white underline">
-            Clear
-        </button>
-    </div>
-
-    <!-- Chat -->
-    <div id="chat-container" class="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-900">
-        <div class="bg-gray-700 p-4 rounded-2xl w-fit">
-            👋 Hi! Ask me about a stock.
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <a href="{% url 'landing' %}"
+                    class="bg-gray-700 hover:bg-gray-600 text-gray-300 p-2 rounded-lg transition-colors"
+                    title="Back to Dashboard">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                </a>
+                <h1 class="text-xl font-bold text-cyan-400">Investment Assistant</h1>
+            </div>
+            <button onclick="location.reload()" class="text-xs text-gray-400 hover:text-white underline">
+                Clear
+            </button>
         </div>
+
+        <!-- Chat -->
+        <div id="chat-container" class="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-900">
+            <div class="bg-gray-700 p-4 rounded-2xl w-fit">
+                👋 Hi! Ask me about a stock.
+            </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" class="hidden text-center text-sm text-gray-400 p-2">
+            Thinking...
+        </div>
+
+        <!-- Input -->
+        <form id="query-form" class="p-4 bg-gray-800 border-t border-gray-700 flex gap-2">
+            <input id="query-input"
+                class="flex-grow p-4 bg-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="Ask about a stock..." autocomplete="off">
+            <button class="bg-cyan-600 hover:bg-cyan-500 px-6 rounded-xl font-bold">
+                Send
+            </button>
+        </form>
+
     </div>
 
-    <!-- Loader -->
-    <div id="loader" class="hidden text-center text-sm text-gray-400 p-2">
-        Thinking...
-    </div>
+    <script>
+        const form = document.getElementById('query-form');
+        const input = document.getElementById('query-input');
+        const chatContainer = document.getElementById('chat-container');
+        const loader = document.getElementById('loader');
 
-    <!-- Input -->
-    <form id="query-form" class="p-4 bg-gray-800 border-t border-gray-700 flex gap-2">
-        <input id="query-input"
-               class="flex-grow p-4 bg-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
-               placeholder="Ask about a stock..."
-               autocomplete="off">
-        <button class="bg-cyan-600 hover:bg-cyan-500 px-6 rounded-xl font-bold">
-            Send
-        </button>
-    </form>
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = input.value.trim();
+            if (!query) return;
 
-</div>
+            appendMessage(query, true);
+            input.value = '';
+            loader.classList.remove('hidden');
 
-<script>
-const form = document.getElementById('query-form');
-const input = document.getElementById('query-input');
-const chatContainer = document.getElementById('chat-container');
-const loader = document.getElementById('loader');
+            try {
+                const res = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
 
-form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const query = input.value.trim();
-    if (!query) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
 
-    appendMessage(query, true);
-    input.value = '';
-    loader.classList.remove('hidden');
+                appendBotResponse(data);
 
-    try {
-        const res = await fetch('/predict', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
+            } catch (err) {
+                appendMessage("Error: " + err.message, false);
+            } finally {
+                loader.classList.add('hidden');
+                scrollBottom();
+            }
         });
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        function appendMessage(text, isUser) {
+            const div = document.createElement('div');
+            div.className = isUser ?
+                "bg-cyan-600 p-3 rounded-2xl ml-auto w-fit" :
+                "bg-gray-700 p-4 rounded-2xl w-fit prose";
 
-        appendBotResponse(data);
+            div.textContent = text;
+            chatContainer.appendChild(div);
+            scrollBottom();
+        }
 
-    } catch (err) {
-        appendMessage("Error: " + err.message, false);
-    } finally {
-        loader.classList.add('hidden');
-        scrollBottom();
-    }
-});
+        function appendBotResponse(data) {
 
-function appendMessage(text, isUser) {
-    const div = document.createElement('div');
-    div.className = isUser ?
-        "bg-cyan-600 p-3 rounded-2xl ml-auto w-fit" :
-        "bg-gray-700 p-4 rounded-2xl w-fit prose";
+            const wrapper = document.createElement('div');
+            wrapper.className = "bg-gray-700 p-4 rounded-2xl prose";
 
-    div.textContent = text;
-    chatContainer.appendChild(div);
-    scrollBottom();
-}
+            if (data.summary) {
+                wrapper.innerHTML = marked.parse(data.summary);
+            }
 
-function appendBotResponse(data) {
+            const chartId = "chart-" + Date.now();
 
-    const wrapper = document.createElement('div');
-    wrapper.className = "bg-gray-700 p-4 rounded-2xl prose";
+            if (data.chart_data) {
+                const chartDiv = document.createElement('div');
+                chartDiv.id = chartId;
+                chartDiv.style.height = "400px";
+                chartDiv.className = "my-4 border border-gray-600 rounded-lg";
+                wrapper.appendChild(chartDiv);
+            }
 
-    if (data.summary) {
-        wrapper.innerHTML = marked.parse(data.summary);
-    }
+            if (data.predictions && data.predictions.length > 0) {
+                const table = document.createElement('div');
+                table.className = "mt-4 bg-gray-800 rounded-lg border border-gray-600 p-3 text-sm";
 
-    const chartId = "chart-" + Date.now();
-
-    if (data.chart_data) {
-        const chartDiv = document.createElement('div');
-        chartDiv.id = chartId;
-        chartDiv.style.height = "400px";
-        chartDiv.className = "my-4 border border-gray-600 rounded-lg";
-        wrapper.appendChild(chartDiv);
-    }
-
-    if (data.predictions && data.predictions.length > 0) {
-        const table = document.createElement('div');
-        table.className = "mt-4 bg-gray-800 rounded-lg border border-gray-600 p-3 text-sm";
-
-        table.innerHTML = `
+                table.innerHTML = `
             <div class="flex justify-between mb-2">
                 <span class="text-cyan-400 font-bold">${data.company} (${data.ticker})</span>
                 <span class="text-gray-400">${data.days_ahead} Day Forecast</span>
@@ -138,35 +160,36 @@ function appendBotResponse(data) {
                 `).join('')}
             </div>
         `;
-        wrapper.appendChild(table);
-    }
-
-    chatContainer.appendChild(wrapper);
-
-    if (data.chart_data) {
-        const chartDiv = document.getElementById(chartId);
-
-        Plotly.purge(chartDiv);
-        chartDiv.innerHTML = "";
-
-        Plotly.newPlot(
-            chartDiv,
-            data.chart_data.data,
-            data.chart_data.layout,
-            {
-                responsive: true,
-                displayModeBar: false
+                wrapper.appendChild(table);
             }
-        );
-    }
 
-    scrollBottom();
-}
+            chatContainer.appendChild(wrapper);
 
-function scrollBottom() {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-}
-</script>
+            if (data.chart_data) {
+                const chartDiv = document.getElementById(chartId);
+
+                Plotly.purge(chartDiv);
+                chartDiv.innerHTML = "";
+
+                Plotly.newPlot(
+                    chartDiv,
+                    data.chart_data.data,
+                    data.chart_data.layout,
+                    {
+                        responsive: true,
+                        displayModeBar: false
+                    }
+                );
+            }
+
+            scrollBottom();
+        }
+
+        function scrollBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
 
 </body>
+
 </html>

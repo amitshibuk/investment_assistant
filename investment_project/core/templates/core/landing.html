@@ -1,0 +1,64 @@
+{% extends "account/base_auth.html" %}
+{% load i18n %}
+
+{% block head_title %}Dashboard - Investment Assistant{% endblock %}
+{% block auth_heading %}Welcome back, {{ user.username|default:"User" }}!{% endblock %}
+
+{% block content %}
+<div class="grid gap-6">
+    <!-- Investment Assistant Card -->
+    <a href="{% url 'home' %}" class="block group">
+        <div
+            class="bg-gray-700/50 p-6 rounded-xl border border-gray-600 hover:border-cyan-500 transition-all hover:bg-gray-700">
+            <div class="flex items-center justify-between mb-4">
+                <div class="bg-cyan-900/50 p-3 rounded-lg text-cyan-400 group-hover:bg-cyan-900 transition-colors">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                    </svg>
+                </div>
+                <svg class="w-6 h-6 text-gray-500 group-hover:text-cyan-400 transform group-hover:translate-x-1 transition-all"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">Investment Assistant</h3>
+            <p class="text-gray-400 text-sm">
+                Chat with our AI to analyze stocks, predict trends, and visualize market data.
+            </p>
+        </div>
+    </a>
+
+    <!-- Placeholder for Future Feature -->
+    <div class="bg-gray-800/50 p-6 rounded-xl border border-gray-700 border-dashed opacity-50 cursor-not-allowed">
+        <div class="flex items-center justify-between mb-4">
+            <div class="bg-gray-700 p-3 rounded-lg text-gray-500">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                    </path>
+                </svg>
+            </div>
+        </div>
+        <h3 class="text-xl font-bold text-gray-400 mb-2">Coming Soon</h3>
+        <p class="text-gray-500 text-sm">
+            More features will be added here.
+        </p>
+    </div>
+</div>
+
+<div class="mt-8 pt-6 border-t border-gray-700 flex justify-center">
+    <form method="post" action="{% url 'account_logout' %}">
+        {% csrf_token %}
+        <button type="submit"
+            class="text-red-400 hover:text-red-300 text-sm font-medium flex items-center transition-colors">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                </path>
+            </svg>
+            Sign Out
+        </button>
+    </form>
+</div>
+{% endblock %}

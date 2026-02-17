@@ -1,0 +1,66 @@
+{% extends "account/base_auth.html" %}
+{% load i18n %}
+
+{% block head_title %}{% trans "Sign Up" %}{% endblock %}
+{% block auth_heading %}{% trans "Create your account to get started." %}{% endblock %}
+
+{% block content %}
+
+<div class="space-y-6">
+    <!-- Google Signup -->
+    <a href="/accounts/google/login/"
+        class="flex items-center justify-center w-full px-4 py-3 bg-white text-gray-900 rounded-xl font-semibold hover:bg-gray-100 transition-colors focus:ring-4 focus:ring-gray-600 focus:outline-none">
+        <span class="mr-3 font-bold text-xl text-blue-500">G</span>
+        Sign up with Google
+    </a>
+
+    <div class="relative flex items-center justify-center py-2">
+        <div class="h-px bg-gray-700 w-full absolute"></div>
+        <span class="bg-gray-800 px-3 text-sm text-gray-500 relative z-10">Or register with email</span>
+    </div>
+
+    <!-- Email Signup Form -->
+    <form class="space-y-4" method="POST" action="{% url 'account_signup' %}">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="text-red-400 text-sm bg-red-900/20 p-3 rounded-lg border border-red-900/50">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% for field in form %}
+        <div>
+            <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-400 mb-1">{{ field.label
+                }}</label>
+            <input type="{{ field.field.widget.input_type }}" name="{{ field.name }}" id="{{ field.id_for_label }}"
+                class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
+                placeholder="{{ field.label }}" {% if field.field.required %}required{% endif %}>
+            {% if field.help_text %}
+            <p class="text-xs text-gray-500 mt-1">{{ field.help_text|safe }}</p>
+            {% endif %}
+            {% if field.errors %}
+            <p class="text-red-400 text-xs mt-1">{{ field.errors.0 }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if redirect_field_value %}
+        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+        {% endif %}
+
+        <button type="submit"
+            class="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition-colors focus:ring-4 focus:ring-cyan-900 focus:outline-none">
+            {% trans "Sign Up" %}
+        </button>
+    </form>
+
+    <div class="text-center text-sm text-gray-400">
+        {% trans "Already have an account?" %}
+        <a href="{{ login_url }}" class="text-cyan-400 hover:text-cyan-300 font-medium">{% trans "Sign In" %}</a>
+    </div>
+</div>
+
+{% endblock %}
