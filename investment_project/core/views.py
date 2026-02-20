@@ -1,5 +1,7 @@
 import json
 import os
+import pytz
+from datetime import datetime, time as dt_time
 import google.generativeai as genai
 from django.shortcuts import render
 from django.http import JsonResponse
@@ -7,16 +9,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from dotenv import load_dotenv
+import yfinance as yf
 
 # --- Imports from your src folder ---
-# These are your core logic modules for the LSTM predictions and Plotly visualizations.
-from .src.prediction_model import load_and_predict
-# ... (existing imports)
+from .src.prediction_model import load_and_predict, train_and_save_model
 from .src.visualizer import generate_interactive_chart, generate_candlestick_chart
-
-# ... (rest of file)
-
-
 
 # --- Configuration ---
 load_dotenv()
@@ -31,6 +28,13 @@ TICKER_MAP = {
     "Apple": "AAPL", "Tesla": "TSLA", "Google": "GOOGL",
     "Amazon": "AMZN", "Microsoft": "MSFT", "Meta": "META", "Netflix": "NFLX"
 }
+
+# Top 15 stocks by market cap (approximate)
+TOP_15_TICKERS = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META",
+    "TSLA", "BRK-B", "AVGO", "JPM", "LLY", "V",
+    "UNH", "XOM", "MA"
+]
 
 # ==========================================
 #  HELPER: Entity Extraction
@@ -98,7 +102,6 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
         return "Could not generate summary."
 
 
-
 # ==========================================
 #  MAIN VIEWS
 # ==========================================
@@ -160,13 +163,11 @@ def predict(request):
 
                 # A. Run Prediction Model (Actual LSTM)
                 try:
-                    # predictions_list contains the raw future prices
                     predictions_list = load_and_predict(ticker, days_ahead)
                 except Exception as e:
                      return JsonResponse({"error": f"Prediction Error: {str(e)}"}, status=500)
 
                 # B. Generate Interactive Chart
-                # We pass the predicted prices to the visualizer to split the lines correctly
                 chart_data = generate_interactive_chart(ticker, predictions_list)
 
                 formatted_predictions = [
@@ -188,7 +189,7 @@ def predict(request):
                     "days_ahead": days_ahead,
                     "predictions": formatted_predictions,
                     "summary": summary,
-                    "chart_data": chart_data, # Sends Plotly JSON to Frontend
+                    "chart_data": chart_data,
                     "is_follow_up": True 
                 })
 
@@ -231,7 +232,11 @@ def dashboard(request):
     Renders the unified Dashboard (Chat + Portfolio).
     """
     user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
-    return render(request, 'core/dashboard.html', {'portfolio': user_portfolio})
+    portfolio_tickers = list(user_portfolio.values_list('ticker', flat=True))
+    return render(request, 'core/dashboard.html', {
+        'portfolio': user_portfolio,
+        'portfolio_tickers_json': json.dumps(portfolio_tickers),
+    })
 
 @login_required
 def portfolio(request):
@@ -269,6 +274,32 @@ def add_to_portfolio(request):
             
     return JsonResponse({"error": "POST method required"}, status=405)
 
+@csrf_exempt
+@login_required
+def remove_from_portfolio(request):
+    """Removes a ticker from the user's portfolio."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            ticker = data.get('ticker')
+            if not ticker:
+                return JsonResponse({"error": "Ticker required"}, status=400)
+            
+            deleted_count, _ = Portfolio.objects.filter(
+                user=request.user,
+                ticker=ticker.upper()
+            ).delete()
+            
+            if deleted_count > 0:
+                return JsonResponse({"message": f"{ticker} removed from portfolio", "status": "removed"})
+            else:
+                return JsonResponse({"message": f"{ticker} not in portfolio", "status": "not_found"})
+                
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "POST method required"}, status=405)
+
 @login_required
 def get_portfolio_data(request, ticker):
     """
@@ -276,7 +307,6 @@ def get_portfolio_data(request, ticker):
     Uses Candlestick chart and skips AI prediction.
     """
     try:
-        # Use the new Candlestick generator
         chart_data = generate_candlestick_chart(ticker)
         
         if not chart_data:
@@ -288,3 +318,201 @@ def get_portfolio_data(request, ticker):
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+@login_required
+def get_portfolio_detail(request, ticker):
+    """
+    Returns enriched stock details: open, prev_close, volume, 
+    current price, change%, and 30-day sparkline data.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice', 0)
+        prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose', 0)
+        open_price = info.get('open') or info.get('regularMarketOpen', 0)
+        volume = info.get('volume') or info.get('regularMarketVolume', 0)
+        market_cap = info.get('marketCap', 0)
+        fifty_two_week_high = info.get('fiftyTwoWeekHigh', 0)
+        fifty_two_week_low = info.get('fiftyTwoWeekLow', 0)
+
+        change = current_price - prev_close if current_price and prev_close else 0
+        change_pct = (change / prev_close * 100) if prev_close else 0
+
+        # 30-day sparkline
+        hist = stock.history(period="30d")
+        sparkline = []
+        if not hist.empty:
+            sparkline = hist['Close'].tolist()
+
+        def fmt_num(n):
+            if n >= 1_000_000_000_000:
+                return f"${n/1_000_000_000_000:.2f}T"
+            elif n >= 1_000_000_000:
+                return f"${n/1_000_000_000:.2f}B"
+            elif n >= 1_000_000:
+                return f"${n/1_000_000:.2f}M"
+            elif n >= 1_000:
+                return f"{n/1_000:.1f}K"
+            return str(n)
+
+        return JsonResponse({
+            "ticker": ticker,
+            "current_price": round(current_price, 2) if current_price else None,
+            "prev_close": round(prev_close, 2) if prev_close else None,
+            "open_price": round(open_price, 2) if open_price else None,
+            "volume": fmt_num(volume) if volume else "N/A",
+            "market_cap": fmt_num(market_cap) if market_cap else "N/A",
+            "fifty_two_week_high": round(fifty_two_week_high, 2) if fifty_two_week_high else None,
+            "fifty_two_week_low": round(fifty_two_week_low, 2) if fifty_two_week_low else None,
+            "change": round(change, 2),
+            "change_pct": round(change_pct, 2),
+            "sparkline": [round(p, 2) for p in sparkline],
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ==========================================
+#  MARKET DATA APIs
+# ==========================================
+
+def get_market_status(request):
+    """Returns current NYSE/NASDAQ market open/close status."""
+    try:
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+        weekday = now_et.weekday()  # 0=Mon, 6=Sun
+        current_time = now_et.time()
+
+        market_open = dt_time(9, 30)
+        market_close = dt_time(16, 0)
+
+        is_open = (
+            weekday < 5 and
+            market_open <= current_time <= market_close
+        )
+
+        return JsonResponse({
+            "is_open": is_open,
+            "status": "Open" if is_open else "Closed",
+            "current_time_et": now_et.strftime("%I:%M %p ET"),
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def get_stock_news(request, ticker):
+    """Returns top 5 recent news items for a ticker from yfinance."""
+    try:
+        stock = yf.Ticker(ticker)
+        raw_news = stock.news or []
+        news_items = []
+        for item in raw_news[:6]:
+            content = item.get('content', {})
+            title = content.get('title', item.get('title', ''))
+            summary = content.get('summary', '')
+            pub_date = content.get('pubDate', '')
+            provider = content.get('provider', {})
+            if isinstance(provider, dict):
+                source = provider.get('displayName', '')
+            else:
+                source = ''
+            # Get canonical URL
+            canonical = content.get('canonicalUrl', {})
+            url = canonical.get('url', '') if isinstance(canonical, dict) else ''
+
+            if title:
+                news_items.append({
+                    "title": title,
+                    "summary": summary[:200] if summary else '',
+                    "url": url,
+                    "source": source,
+                    "published": pub_date[:10] if pub_date else '',
+                })
+        return JsonResponse({"ticker": ticker, "news": news_items})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def get_top_stocks(request):
+    """Returns top 15 stocks by market cap with price and daily change."""
+    try:
+        results = []
+        for ticker_sym in TOP_15_TICKERS:
+            try:
+                stock = yf.Ticker(ticker_sym)
+                info = stock.info
+                current = info.get('currentPrice') or info.get('regularMarketPrice', 0)
+                prev = info.get('previousClose') or info.get('regularMarketPreviousClose', 0)
+                change_pct = ((current - prev) / prev * 100) if prev else 0
+                market_cap = info.get('marketCap', 0)
+                name = info.get('shortName', ticker_sym)
+
+                results.append({
+                    "ticker": ticker_sym,
+                    "name": name,
+                    "price": round(current, 2) if current else 0,
+                    "change_pct": round(change_pct, 2),
+                    "market_cap": market_cap,
+                })
+            except Exception:
+                pass
+
+        results.sort(key=lambda x: x['market_cap'], reverse=True)
+        return JsonResponse({"stocks": results})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@login_required
+def get_live_tickers(request):
+    """Returns live price + change% for the user's portfolio tickers."""
+    try:
+        user_portfolio = Portfolio.objects.filter(user=request.user)
+        tickers = [item.ticker for item in user_portfolio]
+
+        results = []
+        for ticker_sym in tickers:
+            try:
+                stock = yf.Ticker(ticker_sym)
+                info = stock.info
+                current = info.get('currentPrice') or info.get('regularMarketPrice', 0)
+                prev = info.get('previousClose') or info.get('regularMarketPreviousClose', 0)
+                change_pct = ((current - prev) / prev * 100) if prev else 0
+
+                results.append({
+                    "ticker": ticker_sym,
+                    "price": round(current, 2) if current else 0,
+                    "change_pct": round(change_pct, 2),
+                    "is_up": change_pct >= 0,
+                })
+            except Exception:
+                pass
+
+        return JsonResponse({"tickers": results})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+def auto_train(request, ticker):
+    """Triggers model training for a specific ticker in the background."""
+    import threading
+
+    def train_in_background(t):
+        try:
+            train_and_save_model(t)
+            print(f"Auto-train complete for {t}")
+        except Exception as e:
+            print(f"Auto-train failed for {t}: {e}")
+
+    ticker = ticker.upper()
+    thread = threading.Thread(target=train_in_background, args=(ticker,), daemon=True)
+    thread.start()
+
+    return JsonResponse({
+        "status": "training_started",
+        "message": f"Training started for {ticker} in background."
+    })
