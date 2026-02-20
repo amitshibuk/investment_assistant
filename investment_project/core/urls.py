@@ -2,8 +2,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', views.landing, name='landing'),
-    path('assistant/', views.home, name='home'),
+    path('', views.dashboard, name='dashboard'), # New Home
+    path('landing/', views.landing, name='landing'), # Legacy Landing
+    path('assistant/', views.home, name='home'),     # Legacy Chat
     path('predict', views.predict, name='predict'),
     
     # Portfolio

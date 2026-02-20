@@ -226,8 +226,19 @@ def predict(request):
 from .models import Portfolio
 
 @login_required
+def dashboard(request):
+    """
+    Renders the unified Dashboard (Chat + Portfolio).
+    """
+    user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
+    return render(request, 'core/dashboard.html', {'portfolio': user_portfolio})
+
+@login_required
 def portfolio(request):
-    """Renders the portfolio dashboard."""
+    """
+    Legacy Portfolio View - kept for reference or direct access if needed, 
+    but Dashboard is now the primary interface.
+    """
     user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
     return render(request, 'core/portfolio.html', {'portfolio': user_portfolio})
 
