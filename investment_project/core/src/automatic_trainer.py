@@ -11,7 +11,7 @@ from prediction_model import train_and_save_model
 import time
 
 # List of tickers you want to train models for
-TICKERS_TO_TRAIN = ["AAPL", "MSFT", "AMZN", "TSLA"]
+TICKERS_TO_TRAIN = ["AAPL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "TSLA"]
 
 if __name__ == '__main__':
     start_time = time.time()
