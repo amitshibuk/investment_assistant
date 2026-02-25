@@ -233,10 +233,14 @@ def dashboard(request):
     """
     user_portfolio = Portfolio.objects.filter(user=request.user).order_by('-added_at')
     portfolio_tickers = list(user_portfolio.values_list('ticker', flat=True))
+    u = request.user
+    display_name = (f"{u.first_name} {u.last_name}".strip()) or u.username
     return render(request, 'core/dashboard.html', {
         'portfolio': user_portfolio,
         'portfolio_tickers_json': json.dumps(portfolio_tickers),
+        'display_name': display_name,
     })
+
 
 @login_required
 def portfolio(request):
@@ -265,7 +269,12 @@ def add_to_portfolio(request):
             )
             
             if created:
-                return JsonResponse({"message": f"{ticker} added to portfolio", "status": "added"})
+                return JsonResponse({
+                    "message": f"{ticker} added to portfolio",
+                    "status": "added",
+                    "ticker": portfolio_item.ticker,
+                    "added_at": portfolio_item.added_at.strftime("%b %d"),
+                })
             else:
                 return JsonResponse({"message": f"{ticker} already in portfolio", "status": "exists"})
                 
@@ -304,16 +313,18 @@ def remove_from_portfolio(request):
 def get_portfolio_data(request, ticker):
     """
     API to fetch chart data for a specific ticker.
-    Uses Candlestick chart and skips AI prediction.
+    Accepts optional ?period= query param (default: 1wk).
     """
+    period = request.GET.get('period', '1wk')
     try:
-        chart_data = generate_candlestick_chart(ticker)
+        chart_data = generate_candlestick_chart(ticker, period=period)
         
         if not chart_data:
              return JsonResponse({"error": "No data found"}, status=404)
 
         return JsonResponse({
             "ticker": ticker,
+            "period": period,
             "chart_data": chart_data
         })
     except Exception as e:
@@ -467,25 +478,33 @@ def get_top_stocks(request):
 
 @login_required
 def get_live_tickers(request):
-    """Returns live price + change% for the user's portfolio tickers."""
+    """
+    Returns live price + change% for a fixed set of general market tickers.
+    Also flags which ones the user has in their portfolio.
+    """
+    MARKET_TICKERS = ["SPY", "QQQ", "DIA", "AAPL", "MSFT", "NVDA"]
+
     try:
         user_portfolio = Portfolio.objects.filter(user=request.user)
-        tickers = [item.ticker for item in user_portfolio]
+        portfolio_set = {item.ticker for item in user_portfolio}
 
         results = []
-        for ticker_sym in tickers:
+        for ticker_sym in MARKET_TICKERS:
             try:
                 stock = yf.Ticker(ticker_sym)
                 info = stock.info
                 current = info.get('currentPrice') or info.get('regularMarketPrice', 0)
                 prev = info.get('previousClose') or info.get('regularMarketPreviousClose', 0)
                 change_pct = ((current - prev) / prev * 100) if prev else 0
+                name = info.get('shortName', ticker_sym)
 
                 results.append({
                     "ticker": ticker_sym,
+                    "name": name,
                     "price": round(current, 2) if current else 0,
                     "change_pct": round(change_pct, 2),
                     "is_up": change_pct >= 0,
+                    "in_portfolio": ticker_sym in portfolio_set,
                 })
             except Exception:
                 pass

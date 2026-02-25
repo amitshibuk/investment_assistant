@@ -1,469 +1,528 @@
 {% extends 'core/base_dashboard.html' %}
 {% load static %}
-
 {% block content %}
 <style>
-    /* =============================================
-       LAYOUT
-    ============================================= */
+    body {
+        overflow: hidden
+    }
+
     .dashboard-grid {
         display: grid;
-        grid-template-areas:
-            "header header header"
-            "news main chat";
+        grid-template-areas: "header header header" "news main chat";
         grid-template-columns: 280px 1fr 400px;
-        grid-template-rows: 56px 1fr;
-        height: calc(100vh - 48px);
-        /* leave room for bottom bar */
+        grid-template-rows: 56px calc(100vh - 56px);
         width: 100vw;
-        overflow: hidden;
+        height: 100vh
     }
 
     .area-header {
         grid-area: header;
+        position: sticky;
+        top: 0;
+        z-index: 50
     }
 
     .area-news {
         grid-area: news;
-    }
-
-    .area-main {
-        grid-area: main;
+        height: calc(100vh - 56px);
+        overflow-y: auto;
+        position: relative
     }
 
     .area-chat {
         grid-area: chat;
+        height: calc(100vh - 56px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column
     }
 
-    /* Bottom bar */
+    .area-main {
+        grid-area: main;
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 56px);
+        overflow-y: auto;
+        position: relative
+    }
+
+    /* ticker tape */
     #bottom-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
+        width: 100%;
         height: 48px;
-        background: rgba(17, 24, 39, 0.98);
+        background: rgba(10, 15, 25, 0.98);
         border-top: 1px solid #1f2937;
-        z-index: 100;
         display: flex;
         align-items: center;
         overflow: hidden;
-        gap: 0;
+        flex-shrink: 0;
+        position: sticky;
+        bottom: 0;
+        z-index: 20
     }
 
-    .ticker-tape-inner {
+    .tape-inner {
         display: flex;
         align-items: center;
-        gap: 0;
-        animation: tickerScroll 60s linear infinite;
-        white-space: nowrap;
-        flex-shrink: 0;
+        animation: tickScroll 80s linear infinite;
+        white-space: nowrap
     }
 
-    @keyframes tickerScroll {
+    @keyframes tickScroll {
         0% {
-            transform: translateX(0);
+            transform: translateX(0)
         }
 
         100% {
-            transform: translateX(-50%);
+            transform: translateX(-50%)
         }
     }
 
-    #bottom-bar:hover .ticker-tape-inner {
-        animation-play-state: paused;
+    #bottom-bar:hover .tape-inner {
+        animation-play-state: paused
     }
 
-    .ticker-chip {
+    .t-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 14px;
+        border-right: 1px solid #1f2937;
+        font-size: 11px;
+        font-family: monospace;
+        cursor: pointer;
+        position: relative;
+        transition: background .2s
+    }
+
+    .t-chip:hover {
+        background: rgba(255, 255, 255, .05)
+    }
+
+    .chip-add {
+        display: none;
+        position: absolute;
+        top: 50%;
+        right: 5px;
+        transform: translateY(-50%);
+        background: rgba(34, 211, 238, .15);
+        border: 1px solid rgba(34, 211, 238, .4);
+        color: #22d3ee;
+        border-radius: 4px;
+        font-size: 13px;
+        width: 20px;
+        height: 20px;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer
+    }
+
+    .t-chip:hover .chip-add {
+        display: flex
+    }
+
+    /* top-15 */
+    #top15-section {
+        background: #090e1a;
+        border-top: 1px solid #1f2937;
+        flex-shrink: 0
+    }
+
+    #top15-section table {
+        width: 100%;
+        border-collapse: collapse
+    }
+
+    #top15-section th,
+    #top15-section td {
+        padding: 9px 14px;
+        font-size: 12px;
+        text-align: left
+    }
+
+    #top15-section th {
+        color: #6b7280;
+        border-bottom: 1px solid #1f2937;
+        background: #090e1a
+    }
+
+    #top15-section td {
+        border-bottom: 1px solid rgba(31, 41, 55, .5)
+    }
+
+    #top15-section tr:hover td {
+        background: rgba(255, 255, 255, .02)
+    }
+
+    /* portfolio bar */
+    .pt-btn {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 4px 16px;
-        border-right: 1px solid #1f2937;
-        font-size: 11px;
-        font-family: 'Courier New', monospace;
-        transition: background 0.2s;
-        cursor: default;
-    }
-
-    .ticker-chip:hover {
-        background: rgba(255, 255, 255, 0.04);
-    }
-
-    /* Top-15 panel */
-    #top15-panel {
-        position: fixed;
-        bottom: 48px;
-        left: 280px;
-        right: 400px;
-        background: rgba(10, 16, 28, 0.98);
-        border-top: 1px solid #374151;
-        border-left: 1px solid #374151;
-        border-right: 1px solid #374151;
-        z-index: 90;
-        max-height: 320px;
-        overflow-y: auto;
-        transform: translateY(100%);
-        transition: transform 0.3s ease;
-    }
-
-    #top15-panel.visible {
-        transform: translateY(0);
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: #374151;
-        border-radius: 3px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: #111827;
-    }
-
-    .prose strong {
-        color: #22d3ee;
-    }
-
-    /* Tabs */
-    .tab-active {
-        border-bottom: 2px solid #22d3ee;
-        color: #22d3ee;
-    }
-
-    .tab-inactive {
-        border-bottom: 2px solid transparent;
-        color: #9ca3af;
-    }
-
-    .tab-inactive:hover {
-        color: #e5e7eb;
-    }
-
-    /* News cards */
-    .news-card {
-        border-bottom: 1px solid #1f2937;
-        padding: 10px 12px;
-        transition: background 0.15s;
-    }
-
-    .news-card:hover {
-        background: rgba(55, 65, 81, 0.3);
-    }
-
-    /* Portfolio ticker chips in tape */
-    .pticker-btn {
-        min-width: 130px;
         flex-shrink: 0;
-        padding: 6px 10px;
-        border-radius: 6px;
+        padding: 5px 10px 5px 8px;
+        border-radius: 20px;
         border: 1px solid #1f2937;
         background: #111827;
-        transition: all 0.2s;
+        transition: all .2s;
         position: relative;
         cursor: pointer;
+        white-space: nowrap;
     }
 
-    .pticker-btn:hover {
-        border-color: rgba(34, 211, 238, 0.5);
+    .pt-btn:hover {
+        border-color: rgba(34, 211, 238, .5);
         background: #1f2937;
     }
 
-    .pticker-btn.active {
+    .pt-btn.active {
         border-color: #22d3ee;
-        background: #1f2937;
+        background: rgba(34, 211, 238, .08);
+        box-shadow: 0 0 0 1px #22d3ee33;
     }
 
-    .remove-btn {
+    .pt-btn .tk {
+        font-weight: 700;
+        font-size: 12px;
+        color: #22d3ee;
+        font-family: monospace;
+    }
+
+    .pt-btn .px {
+        font-size: 10px;
+        font-family: monospace;
+        color: #6b7280;
+    }
+
+    .pt-btn .px.up {
+        color: #4ade80;
+    }
+
+    .pt-btn .px.dn {
+        color: #f87171;
+    }
+
+    .rm-btn {
         display: none;
         position: absolute;
-        top: -6px;
-        right: -6px;
-        width: 16px;
-        height: 16px;
+        top: -5px;
+        right: -5px;
+        width: 15px;
+        height: 15px;
         border-radius: 50%;
         background: #ef4444;
-        color: white;
-        font-size: 9px;
+        color: #fff;
+        font-size: 8px;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        z-index: 10;
         border: none;
-        line-height: 1;
+        z-index: 5;
     }
 
-    .pticker-btn:hover .remove-btn {
+    .pt-btn:hover .rm-btn {
         display: flex;
     }
 
-    /* Info strip */
+    /* info strip */
     #info-strip {
         display: none;
         flex-direction: column;
-        gap: 8px;
-        padding: 10px 12px;
-        background: rgba(17, 24, 39, 0.9);
+        gap: 6px;
+        padding: 8px 12px;
+        background: rgba(17, 24, 39, .9);
         border-top: 1px solid #1f2937;
-        flex-shrink: 0;
+        flex-shrink: 0
     }
 
-    /* Sparkline mini chart */
-    #sparkline-chart {
-        height: 80px;
+    /* tabs */
+    .tab-a {
+        border-bottom: 2px solid #22d3ee;
+        color: #22d3ee
     }
 
-    /* Market status badge */
-    .market-badge-dot {
-        transition: background 0.5s;
+    .tab-i {
+        border-bottom: 2px solid transparent;
+        color: #9ca3af
     }
 
-    /* Animate fade for messages */
-    @keyframes fadeInUp {
+    .tab-i:hover {
+        color: #e5e7eb
+    }
+
+    /* period select */
+    #period-sel {
+        background: #1f2937;
+        color: #d1d5db;
+        border: 1px solid #374151;
+        border-radius: 6px;
+        padding: 3px 7px;
+        font-size: 11px;
+        cursor: pointer
+    }
+
+    #period-sel:focus {
+        outline: none;
+        border-color: #22d3ee
+    }
+
+    /* profile popup */
+    #profile-popup {
+        display: none;
+        position: fixed;
+        top: 62px;
+        right: 16px;
+        z-index: 200;
+        background: #111827;
+        border: 1px solid #374151;
+        border-radius: 12px;
+        padding: 20px;
+        width: 240px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, .6)
+    }
+
+    #profile-popup.open {
+        display: block;
+        animation: fadeup .15s ease
+    }
+
+    @keyframes fadeup {
         from {
             opacity: 0;
-            transform: translateY(8px);
+            transform: translateY(-8px)
         }
 
         to {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0)
         }
     }
 
-    .animate-fade-in-up {
-        animation: fadeInUp 0.25s ease forwards;
+    /* scrollbar */
+    ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px
     }
 
-    .animate-fade-in {
-        animation: fadeInUp 0.2s ease forwards;
+    ::-webkit-scrollbar-thumb {
+        background: #374151;
+        border-radius: 3px
     }
 
-    /* Auto-train btn */
-    #auto-train-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
+    .no-scroll::-webkit-scrollbar {
+        display: none
     }
 
-    /* Scrolled reveal trigger */
-    #reveal-top15-btn {
-        position: fixed;
-        bottom: 56px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 95;
-        display: none;
-    }
-
-    .no-scrollbar::-webkit-scrollbar {
-        display: none;
-    }
-
-    .no-scrollbar {
+    .no-scroll {
         -ms-overflow-style: none;
-        scrollbar-width: none;
+        scrollbar-width: none
+    }
+
+    /* misc */
+    .news-card {
+        border-bottom: 1px solid #1f2937;
+        padding: 9px 12px;
+        transition: background .15s;
+        cursor: pointer
+    }
+
+    .news-card:hover {
+        background: rgba(55, 65, 81, .3)
+    }
+
+    @keyframes fiu {
+        from {
+            opacity: 0;
+            transform: translateY(6px)
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0)
+        }
+    }
+
+    .fia {
+        animation: fiu .2s ease forwards
     }
 </style>
 
+<!-- Profile popup -->
+<div id="profile-popup">
+    <div class="flex flex-col items-center gap-2 mb-4">
+        <div
+            class="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center text-xl font-bold text-white shadow-lg">
+            {{ user.username|slice:":2"|upper }}
+        </div>
+        <div class="text-sm font-bold text-white">{{ display_name }}</div>
+        <div class="text-xs text-gray-500">{{ user.email|default:"No email set" }}</div>
+        <div class="text-[10px] text-gray-600">Member since {{ user.date_joined|date:"M Y" }}</div>
+    </div>
+    <div class="border-t border-gray-800 pt-3 flex flex-col gap-2">
+        <a href="{% url 'account_logout' %}"
+            class="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign Out
+        </a>
+    </div>
+</div>
+
 <div class="dashboard-grid bg-gray-950 text-white font-sans">
 
-    <!-- ========== HEADER ========== -->
-    <header
-        class="area-header bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-40 shadow-md">
+    <!-- HEADER -->
+    <header class="area-header bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6">
         <div class="flex items-center gap-3">
             <div
-                class="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                class="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center">
                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
             </div>
             <div>
-                <h1 class="text-lg font-bold tracking-tight text-white">Investment Assistant</h1>
-                <p class="text-[10px] text-gray-400 uppercase tracking-wider">Professional Trading Dashboard</p>
+                <h1 class="text-base font-bold text-white">Investment Assistant</h1>
+                <p class="text-[9px] text-gray-500 uppercase tracking-wider">Professional Dashboard</p>
             </div>
         </div>
         <div class="flex items-center gap-4">
-            <!-- Live Market Status -->
             <div id="market-badge"
-                class="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-full border border-gray-700 cursor-default select-none">
-                <div id="market-dot" class="w-2 h-2 bg-gray-500 rounded-full market-badge-dot"></div>
+                class="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-full border border-gray-700">
+                <div id="market-dot" class="w-2 h-2 bg-gray-500 rounded-full"></div>
                 <span id="market-text" class="text-xs text-gray-400">Checking...</span>
                 <span id="market-time" class="text-[10px] text-gray-600 ml-1"></span>
             </div>
-            <div class="h-6 w-px bg-gray-800"></div>
-            <div class="flex items-center gap-2 cursor-pointer hover:bg-gray-800 p-1 rounded-lg transition-colors">
+            <button id="profile-btn" onclick="toggleProfile()"
+                class="flex items-center gap-2 hover:bg-gray-800 px-2 py-1 rounded-lg transition-colors cursor-pointer">
                 <div
-                    class="w-8 h-8 rounded-full bg-cyan-900 flex items-center justify-center text-xs font-bold text-cyan-400">
-                    {{ user.username|slice:":2"|upper }}
+                    class="w-8 h-8 rounded-full bg-cyan-900 flex items-center justify-center text-xs font-bold text-cyan-400 border border-cyan-800">
+                    {{ display_name|slice:":2"|upper }}
                 </div>
-                <span class="text-sm font-medium text-gray-300">{{ user.username }}</span>
-            </div>
+                <span class="text-sm font-medium text-gray-300">{{ display_name }}</span>
+                <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
         </div>
     </header>
 
-    <!-- ========== LEFT PANEL: NEWS ========== -->
-    <aside class="area-news bg-gray-900 border-r border-gray-800 flex flex-col z-20 shadow-xl overflow-hidden">
-        <div class="p-4 border-b border-gray-800 flex items-center justify-between bg-gray-900 sticky top-0">
-            <h2 class="font-bold text-gray-200 tracking-wide text-sm flex items-center gap-2">
+    <!-- LEFT: NEWS -->
+    <aside class="area-news bg-gray-900 border-r border-gray-800 flex flex-col">
+        <div class="p-3 border-b border-gray-800 sticky top-0 bg-gray-900 z-10 flex items-center justify-between">
+            <h2 class="font-bold text-gray-200 text-sm flex items-center gap-2">
                 <svg class="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z">
-                    </path>
+                        d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
                 </svg>
                 MARKET NEWS
             </h2>
-            <span id="news-ticker-label" class="text-[10px] text-gray-600 font-mono"></span>
+            <span id="news-lbl" class="text-[10px] text-gray-600 font-mono"></span>
         </div>
-
-        <!-- News content area -->
-        <div id="news-panel" class="flex-grow overflow-y-auto">
-            <div id="news-placeholder"
-                class="p-6 flex flex-col items-center justify-center text-center opacity-40 space-y-3 h-full">
-                <svg class="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                        d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z">
-                    </path>
-                </svg>
-                <p class="text-xs text-gray-600">Select a stock to load news</p>
-            </div>
-            <div id="news-loader" class="hidden p-6 flex flex-col items-center justify-center gap-2">
-                <div class="w-5 h-5 border-2 border-cyan-900 border-t-cyan-500 rounded-full animate-spin"></div>
-                <span class="text-xs text-gray-500">Loading news...</span>
-            </div>
-            <div id="news-list" class="hidden flex-col"></div>
+        <div id="news-placeholder"
+            class="p-6 flex flex-col items-center justify-center text-center opacity-40 space-y-2">
+            <svg class="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+            </svg>
+            <p class="text-xs text-gray-600">Select a stock to load news</p>
         </div>
-
-        <div class="p-4 border-t border-gray-800 mt-auto">
-            <a href="{% url 'account_logout' %}" class="text-xs text-gray-500 hover:text-white flex items-center gap-2">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
-                    </path>
-                </svg>
-                Sign Out
-            </a>
+        <div id="news-loader" class="hidden p-6 flex flex-col items-center gap-2">
+            <div class="w-5 h-5 border-2 border-cyan-900 border-t-cyan-500 rounded-full animate-spin"></div>
+            <span class="text-xs text-gray-500">Loading...</span>
         </div>
+        <div id="news-list" class="hidden flex-col flex-grow overflow-y-auto"></div>
     </aside>
 
-    <!-- ========== CENTER PANEL: MAIN ========== -->
-    <main class="area-main flex flex-col bg-gray-950 relative overflow-hidden">
+    <!-- CENTER: MAIN -->
+    <main class="area-main bg-gray-950">
 
-        <!-- Portfolio Ticker Bar -->
-        <div class="h-[72px] bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3 flex-shrink-0">
+        <!-- Portfolio bar -->
+        <div class="h-12 bg-gray-900 border-b border-gray-800 flex items-center px-3 gap-2 flex-shrink-0">
             <div
-                class="bg-gray-800 px-3 py-1 rounded text-xs font-bold text-gray-400 border border-gray-700 flex-shrink-0">
-                PORTFOLIO
-            </div>
-            <div class="h-8 w-px bg-gray-800 flex-shrink-0"></div>
-
-            <div id="portfolio-tickers" class="flex-grow overflow-x-auto flex items-center gap-2 no-scrollbar pb-1">
+                class="bg-gray-800 px-2.5 py-1 rounded-full text-[9px] font-bold text-gray-400 border border-gray-700 tracking-wider flex-shrink-0">
+                PORTFOLIO</div>
+            <div class="h-5 w-px bg-gray-800 flex-shrink-0"></div>
+            <div id="portfolio-tickers" class="flex-grow flex items-center gap-2 overflow-x-auto no-scroll">
                 {% for item in portfolio %}
-                <div class="pticker-btn group" id="pticker-{{ item.ticker }}"
-                    onclick="loadTicker('{{ item.ticker }}', this)">
-                    <button class="remove-btn"
-                        onclick="event.stopPropagation(); removeFromPortfolio('{{ item.ticker }}')">✕</button>
-                    <div class="flex items-center justify-between w-full">
-                        <span class="font-bold text-cyan-400 text-sm">{{ item.ticker }}</span>
-                        <span class="text-[9px] text-gray-600">{{ item.added_at|date:"M d" }}</span>
-                    </div>
-                    <div id="price-{{ item.ticker }}" class="text-[10px] text-gray-500 font-mono mt-0.5">—</div>
+                <div class="pt-btn" id="pticker-{{ item.ticker }}" onclick="loadTicker('{{ item.ticker }}', this)">
+                    <button class="rm-btn"
+                        onclick="event.stopPropagation();removeFromPortfolio('{{ item.ticker }}')">✕</button>
+                    <span class="tk">{{ item.ticker }}</span>
+                    <span class="px" id="pticker-price-{{ item.ticker }}">—</span>
                 </div>
                 {% empty %}
-                <div class="text-sm text-gray-600 italic">No stocks in portfolio yet.</div>
+                <div id="empty-msg" class="text-sm text-gray-600 italic">No stocks yet. Use the chat to analyze a stock
+                    →</div>
                 {% endfor %}
             </div>
         </div>
 
-        <!-- Tab Headers -->
-        <div
-            class="h-10 border-b border-gray-800 bg-gray-900/50 flex items-center px-4 gap-6 flex-shrink-0 backdrop-blur-sm">
-            <button onclick="switchTab('tab-portfolio')" id="btn-tab-portfolio"
-                class="tab-active text-sm font-medium h-full px-2 transition-colors">
-                Portfolio Chart
-            </button>
-            <button onclick="switchTab('tab-analysis')" id="btn-tab-analysis"
-                class="tab-inactive text-sm font-medium h-full px-2 transition-colors relative">
-                <span class="flex items-center gap-2">
-                    AI Analysis
-                    <span id="analysis-badge" class="hidden w-2 h-2 bg-cyan-500 rounded-full"></span>
-                </span>
-            </button>
+        <!-- Tab headers + period -->
+        <div class="h-10 border-b border-gray-800 bg-gray-900/50 flex items-center px-4 gap-5 flex-shrink-0">
+            <button onclick="switchTab('tab-p')" id="btn-tab-p"
+                class="tab-a text-sm font-medium h-full px-2 transition-colors">Portfolio Chart</button>
+            <button onclick="switchTab('tab-a')" id="btn-tab-a"
+                class="tab-i text-sm font-medium h-full px-2 transition-colors">AI Analysis <span id="ai-dot"
+                    class="hidden w-2 h-2 bg-cyan-500 rounded-full inline-block"></span></button>
+            <div id="chart-header" class="hidden ml-auto flex items-center gap-2">
+                <span id="chart-lbl" class="text-xs text-gray-400 font-mono"></span>
+                <select id="period-sel" onchange="onPeriodChange(this.value)">
+                    <option value="5d">1 Week</option>
+                    <option value="1mo">1 Month</option>
+                    <option value="3mo">3 Months</option>
+                    <option value="6mo">6 Months</option>
+                    <option value="1y">1 Year</option>
+                    <option value="2y">2 Years</option>
+                </select>
+            </div>
         </div>
 
-        <!-- Tab Contents -->
-        <div class="flex-grow relative bg-gray-950 p-1 flex flex-col overflow-hidden">
-
-            <!-- Loader -->
+        <!-- Chart area -->
+        <div class="relative flex flex-col flex-grow min-h-0" style="min-height:580px">
             <div id="chart-loader" class="absolute inset-0 flex items-center justify-center bg-gray-950/80 z-20 hidden">
                 <div class="flex flex-col items-center gap-3">
                     <div class="w-10 h-10 border-4 border-cyan-900 border-t-cyan-500 rounded-full animate-spin"></div>
-                    <span class="text-xs text-cyan-500 font-mono animate-pulse">FETCHING DATA...</span>
+                    <span class="text-xs text-cyan-500 animate-pulse font-mono">FETCHING DATA...</span>
                 </div>
             </div>
 
-            <!-- Tab: Portfolio -->
-            <div id="tab-portfolio" class="w-full flex flex-col flex-grow overflow-hidden">
-                <!-- Chart container -->
-                <div id="portfolio-chart-container"
-                    class="flex-grow rounded-lg border border-gray-800 bg-gray-900/30 relative min-h-0">
-                    <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-700 pointer-events-none"
-                        id="portfolio-placeholder">
-                        <svg class="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Tab Portfolio -->
+            <div id="tab-p" class="flex flex-col flex-grow min-h-0">
+                <div id="p-chart" class="flex-grow bg-gray-900/30 border border-gray-800 rounded m-1 relative min-h-0">
+                    <div id="p-placeholder"
+                        class="absolute inset-0 flex flex-col items-center justify-center text-gray-700">
+                        <svg class="w-14 h-14 mb-3 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                         </svg>
-                        <h3 class="text-xl font-bold text-gray-700">Portfolio Overview</h3>
-                        <p class="text-sm">Select a stock from the top bar to view details.</p>
+                        <p class="text-base font-bold">Select a stock above</p>
                     </div>
                 </div>
-
-                <!-- Info strip (shown after ticker load) -->
-                <div id="info-strip">
-                    <!-- Stats row -->
-                    <div class="flex items-center gap-4 flex-wrap">
-                        <div id="strip-price" class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Price</span>
-                            <span class="text-lg font-bold text-white font-mono">—</span>
+                <!-- Info strip: compact single row -->
+                <div id="info-strip"
+                    style="display:none;flex-shrink:0;background:rgba(17,24,39,0.95);border-top:1px solid #1f2937;padding:6px 12px">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <div class="flex items-baseline gap-1.5">
+                            <span id="s-price" class="text-base font-bold text-white font-mono">—</span>
+                            <span id="s-chg" class="text-xs font-semibold font-mono">—</span>
                         </div>
-                        <div id="strip-change" class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Change</span>
-                            <span class="text-sm font-semibold font-mono">—</span>
-                        </div>
-                        <div class="h-8 w-px bg-gray-800"></div>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Open</span>
-                            <span id="strip-open" class="text-sm text-gray-300 font-mono">—</span>
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Prev Close</span>
-                            <span id="strip-prev" class="text-sm text-gray-300 font-mono">—</span>
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Volume</span>
-                            <span id="strip-vol" class="text-sm text-gray-300 font-mono">—</span>
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">Mkt Cap</span>
-                            <span id="strip-mcap" class="text-sm text-gray-300 font-mono">—</span>
-                        </div>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] text-gray-500 uppercase">52W H/L</span>
-                            <span id="strip-52w" class="text-sm text-gray-300 font-mono">—</span>
+                        <div class="h-4 w-px bg-gray-700"></div>
+                        <div class="flex items-center gap-3 text-xs font-mono text-gray-400">
+                            <span>O: <span id="s-open" class="text-gray-200">—</span></span>
+                            <span>C: <span id="s-prev" class="text-gray-200">—</span></span>
+                            <span>V: <span id="s-vol" class="text-gray-200">—</span></span>
+                            <span>Cap: <span id="s-mcap" class="text-gray-200">—</span></span>
+                            <span>52W: <span id="s-52w" class="text-gray-200">—</span></span>
                         </div>
                         <div class="ml-auto flex items-center gap-2">
-                            <div id="sparkline-chart" class="w-32"></div>
-                            <button id="auto-train-btn" onclick="triggerAutoTrain()"
-                                class="text-[10px] bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-cyan-500 text-gray-400 hover:text-cyan-400 px-3 py-1.5 rounded transition-all flex items-center gap-1.5">
+                            <div id="sparkline" class="w-24" style="height:40px"></div>
+                            <button id="train-btn" onclick="triggerTrain()"
+                                class="text-[10px] bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-cyan-500 text-gray-400 hover:text-cyan-400 px-2.5 py-1 rounded flex items-center gap-1 transition-all">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                                    </path>
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                                 Auto-Train
                             </button>
@@ -472,68 +531,97 @@
                 </div>
             </div>
 
-            <!-- Tab: Analysis -->
-            <div id="tab-analysis" class="w-full h-full flex-col hidden">
-                <div id="analysis-chart-container"
-                    class="flex-grow rounded-lg border border-gray-800 bg-gray-900/30 relative h-full">
-                    <div
-                        class="absolute inset-0 flex flex-col items-center justify-center text-gray-700 pointer-events-none">
-                        <svg class="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Tab Analysis -->
+            <div id="tab-a" class="hidden flex-col flex-grow min-h-0">
+                <div id="a-chart" class="flex-grow bg-gray-900/30 border border-gray-800 rounded m-1 relative min-h-0">
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-700">
+                        <svg class="w-14 h-14 mb-3 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z">
-                            </path>
+                                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                         </svg>
-                        <h3 class="text-xl font-bold text-gray-700">AI Analysis</h3>
-                        <p class="text-sm">Ask the chatbot to analyze a stock to see charts here.</p>
+                        <p class="text-base font-bold">Ask AI to analyze a stock</p>
                     </div>
                 </div>
             </div>
         </div>
-    </main>
 
-    <!-- ========== RIGHT PANEL: CHAT ========== -->
-    <aside
-        class="area-chat bg-gray-900 border-l border-gray-800 flex flex-col relative z-30 shadow-2xl h-full overflow-hidden">
-        <header class="h-14 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900 flex-shrink-0">
-            <div class="flex items-center gap-2">
-                <svg class="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z">
-                    </path>
-                </svg>
-                <span class="text-sm font-bold text-gray-200">AI Chat</span>
-            </div>
-            <button onclick="location.reload()" class="text-gray-500 hover:text-white" title="Reset">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
-                    </path>
-                </svg>
-            </button>
-        </header>
-
-        <div id="chat-container" class="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-900 scroll-smooth">
-            <div class="chat-msg-bot flex gap-3">
-                <div
-                    class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0 flex items-center justify-center text-cyan-200 text-[10px] font-bold border border-cyan-700">
-                    AI</div>
-                <div
-                    class="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm p-3 text-sm text-gray-300 shadow-sm max-w-[95%]">
-                    Ready to analyze markets. Charts appear in the <b>Analysis</b> tab.
-                </div>
+        <!-- Live Ticker Tape (sticky bottom within scrollable main) -->
+        <div id="bottom-bar">
+            <div
+                class="flex-shrink-0 bg-gray-900 border-r border-gray-800 px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider h-full flex items-center">
+                LIVE</div>
+            <div class="overflow-hidden flex-grow h-full flex items-center">
+                <div id="ticker-tape" class="tape-inner"></div>
             </div>
         </div>
 
-        <div class="p-4 bg-gray-900 border-t border-gray-800 flex-shrink-0">
-            <form id="query-form" class="relative">
-                <input id="query-input" type="text"
-                    class="w-full bg-gray-800 text-white placeholder-gray-500 border border-gray-700 rounded-lg px-4 py-3 pr-10 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm"
+        <!-- Top 15 (below ticker, scroll down to see) -->
+        <div id="top15-section">
+            <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
+                <svg class="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                </svg>
+                <span class="text-sm font-bold text-gray-300 uppercase tracking-wider">Top 15 by Market Cap</span>
+                <span class="ml-auto text-xs text-gray-600 italic">↑ Scroll up to return</span>
+            </div>
+            <div id="t15-loader" class="p-8 flex justify-center">
+                <div class="w-5 h-5 border-2 border-cyan-900 border-t-cyan-500 rounded-full animate-spin"></div>
+            </div>
+            <table id="t15-table" class="hidden">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Ticker</th>
+                        <th>Company</th>
+                        <th class="text-right">Price</th>
+                        <th class="text-right">Change</th>
+                    </tr>
+                </thead>
+                <tbody id="t15-body"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- RIGHT: CHAT -->
+    <aside class="area-chat bg-gray-900 border-l border-gray-800">
+        <header class="h-12 border-b border-gray-800 flex items-center justify-between px-4 flex-shrink-0">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                <span class="text-sm font-bold text-gray-200">AI Chat</span>
+            </div>
+            <button onclick="location.reload()" title="Reset chat"
+                class="text-gray-600 hover:text-white transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+            </button>
+        </header>
+        <div id="chat-box" class="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-900"
+            style="height:calc(100% - 48px - 68px)">
+            <div class="flex gap-2">
+                <div
+                    class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-cyan-300 border border-cyan-700">
+                    AI</div>
+                <div
+                    class="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm p-3 text-sm text-gray-300 max-w-[95%]">
+                    Ready. Charts appear in the <b>AI Analysis</b> tab.</div>
+            </div>
+        </div>
+        <div class="p-3 border-t border-gray-800 flex-shrink-0">
+            <form id="chat-form" class="relative">
+                <input id="chat-input" type="text"
+                    class="w-full bg-gray-800 text-white placeholder-gray-500 border border-gray-700 rounded-lg px-4 py-2.5 pr-10 focus:outline-none focus:border-cyan-500 text-sm font-mono"
                     placeholder="Ask AI..." autocomplete="off">
                 <button type="submit"
-                    class="absolute right-2 top-2 p-1.5 text-cyan-500 hover:text-white transition-colors">
+                    class="absolute right-2 top-2 p-1 text-cyan-500 hover:text-white transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                            d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
                 </button>
             </form>
@@ -542,579 +630,309 @@
 
 </div>
 
-<!-- ========== TOP 15 PANEL ========== -->
-<div id="top15-panel">
-    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 sticky top-0 bg-gray-950">
-        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Top 15 by Market Cap</span>
-        <button onclick="toggleTop15()" class="text-gray-600 hover:text-white text-sm">✕</button>
-    </div>
-    <div id="top15-loader" class="p-4 flex justify-center">
-        <div class="w-5 h-5 border-2 border-cyan-900 border-t-cyan-500 rounded-full animate-spin"></div>
-    </div>
-    <table id="top15-table" class="w-full text-xs hidden">
-        <thead>
-            <tr class="text-gray-500 border-b border-gray-800">
-                <th class="text-left px-4 py-2 font-medium">#</th>
-                <th class="text-left px-4 py-2 font-medium">Ticker</th>
-                <th class="text-left px-4 py-2 font-medium">Name</th>
-                <th class="text-right px-4 py-2 font-medium">Price</th>
-                <th class="text-right px-4 py-2 font-medium">Change</th>
-            </tr>
-        </thead>
-        <tbody id="top15-tbody"></tbody>
-    </table>
-</div>
-
-<!-- Toggle button for Top 15 -->
-<button id="reveal-top15-btn" onclick="toggleTop15()"
-    class="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-3 py-1.5 rounded-full shadow-lg transition-all">
-    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path>
-    </svg>
-    Top 15 Stocks
-</button>
-
-<!-- ========== BOTTOM TICKER TAPE ========== -->
-<div id="bottom-bar">
-    <div
-        class="flex-shrink-0 bg-gray-900 border-r border-gray-800 px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider h-full flex items-center">
-        LIVE
-    </div>
-    <div id="ticker-tape-wrapper" class="overflow-hidden flex-grow relative h-full flex items-center">
-        <div id="ticker-tape" class="ticker-tape-inner">
-            <!-- duplicated in JS for seamless loop -->
-        </div>
-    </div>
-</div>
-
-<!-- ========== SCRIPTS ========== -->
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    // ---- State ----
-    const PORTFOLIO_TICKERS = {{ portfolio_tickers_json| safe }};
-    let currentTicker = null;
-    let top15Loaded = false;
-    let top15Visible = false;
+    let PTICKERS = {{ portfolio_tickers_json| safe }};
+    let CUR_TICKER = null;
+    let CUR_PERIOD = '5d';
 
-    // ==========================================
-    // TAB SWITCHING
-    // ==========================================
-    function switchTab(tabId) {
-        ['btn-tab-portfolio', 'btn-tab-analysis'].forEach(id => {
-            const el = document.getElementById(id);
-            el.classList.remove('tab-active');
-            el.classList.add('tab-inactive');
+    // ---- Profile Popup ----
+    function toggleProfile() {
+        const p = document.getElementById('profile-popup');
+        p.classList.toggle('open');
+    }
+    document.addEventListener('click', e => {
+        const btn = document.getElementById('profile-btn');
+        const popup = document.getElementById('profile-popup');
+        if (!btn.contains(e.target) && !popup.contains(e.target)) popup.classList.remove('open');
+    });
+
+    // ---- Tabs ----
+    function switchTab(id) {
+        ['tab-p', 'tab-a'].forEach(t => {
+            const el = document.getElementById(t);
+            el.classList.toggle('hidden', t !== id);
+            el.classList.toggle('flex', t === id);
+            const btn = document.getElementById('btn-' + t);
+            btn.className = btn.className.replace(/tab-[ai]/g, '');
+            btn.classList.add(t === id ? 'tab-a' : 'tab-i');
         });
-
-        const btn = document.getElementById('btn-' + tabId);
-        btn.classList.add('tab-active');
-        btn.classList.remove('tab-inactive');
-
-        ['tab-portfolio', 'tab-analysis'].forEach(id => {
-            const el = document.getElementById(id);
-            if (id === tabId) {
-                el.classList.remove('hidden');
-                el.classList.add('flex');
-                if (tabId === 'tab-analysis') {
-                    document.getElementById('analysis-badge').classList.add('hidden');
-                }
-                window.dispatchEvent(new Event('resize'));
-            } else {
-                el.classList.add('hidden');
-                el.classList.remove('flex');
-            }
-        });
+        if (id === 'tab-a') document.getElementById('ai-dot').classList.add('hidden');
+        window.dispatchEvent(new Event('resize'));
     }
 
-    // ==========================================
-    // LOAD TICKER (Portfolio Tab)
-    // ==========================================
-    async function loadTicker(ticker, btnElement) {
-        switchTab('tab-portfolio');
-        currentTicker = ticker;
+    // ---- Period change ----
+    function onPeriodChange(v) {
+        CUR_PERIOD = v;
+        if (CUR_TICKER) loadTicker(CUR_TICKER, document.getElementById('pticker-' + CUR_TICKER));
+    }
 
-        // Highlight active button
-        document.querySelectorAll('.pticker-btn').forEach(b => b.classList.remove('active'));
-        if (btnElement) btnElement.classList.add('active');
-
-        const chartLoader = document.getElementById('chart-loader');
-        chartLoader.classList.remove('hidden');
-
-        // Load chart + detail + news in parallel
-        const [chartRes, detailRes] = await Promise.all([
-            fetch(`/api/portfolio-data/${ticker}/`).catch(() => null),
+    // ---- Load ticker ----
+    async function loadTicker(ticker, btn) {
+        switchTab('tab-p');
+        CUR_TICKER = ticker;
+        document.getElementById('chart-header').classList.remove('hidden');
+        document.getElementById('chart-header').style.display = 'flex';
+        document.getElementById('chart-lbl').textContent = ticker;
+        document.getElementById('period-sel').value = CUR_PERIOD;
+        document.querySelectorAll('.pt-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        document.getElementById('chart-loader').classList.remove('hidden');
+        const [cr, dr] = await Promise.all([
+            fetch(`/api/portfolio-data/${ticker}/?period=${CUR_PERIOD}`).catch(() => null),
             fetch(`/api/portfolio-detail/${ticker}/`).catch(() => null),
         ]);
-
-        chartLoader.classList.add('hidden');
-
-        // Render chart
-        if (chartRes && chartRes.ok) {
-            const data = await chartRes.json();
-            if (data.chart_data) {
-                const ph = document.getElementById('portfolio-placeholder');
-                if (ph) ph.remove();
-                renderChart('portfolio-chart-container', data.chart_data);
+        document.getElementById('chart-loader').classList.add('hidden');
+        if (cr && cr.ok) {
+            const d = await cr.json();
+            if (d.chart_data) {
+                document.getElementById('p-placeholder')?.remove();
+                renderChart('p-chart', d.chart_data);
             }
         }
-
-        // Render info strip
-        if (detailRes && detailRes.ok) {
-            const det = await detailRes.json();
-            renderInfoStrip(det);
-        }
-
-        // Load news
+        if (dr && dr.ok) renderInfoStrip(await dr.json());
         loadNews(ticker);
     }
 
-    function renderInfoStrip(d) {
-        const strip = document.getElementById('info-strip');
-        strip.style.display = 'flex';
-
-        const priceEl = document.getElementById('strip-price').querySelector('span:last-child');
-        priceEl.textContent = d.current_price ? `$${d.current_price}` : '—';
-
-        const changeEl = document.getElementById('strip-change').querySelector('span:last-child');
-        const isUp = d.change_pct >= 0;
-        changeEl.textContent = `${isUp ? '▲' : '▼'} ${Math.abs(d.change_pct)}% ($${Math.abs(d.change).toFixed(2)})`;
-        changeEl.className = `text-sm font-semibold font-mono ${isUp ? 'text-green-400' : 'text-red-400'}`;
-
-        document.getElementById('strip-open').textContent = d.open_price ? `$${d.open_price}` : '—';
-        document.getElementById('strip-prev').textContent = d.prev_close ? `$${d.prev_close}` : '—';
-        document.getElementById('strip-vol').textContent = d.volume || '—';
-        document.getElementById('strip-mcap').textContent = d.market_cap || '—';
-
-        if (d.fifty_two_week_high && d.fifty_two_week_low) {
-            document.getElementById('strip-52w').textContent = `$${d.fifty_two_week_low} / $${d.fifty_two_week_high}`;
-        }
-
-        // Sparkline
-        if (d.sparkline && d.sparkline.length > 1) {
-            renderSparkline(d.sparkline);
-        }
-    }
-
-    function renderSparkline(prices) {
-        const container = document.getElementById('sparkline-chart');
-        const isUp = prices[prices.length - 1] >= prices[0];
-        const color = isUp ? '#22c55e' : '#ef4444';
-
-        Plotly.newPlot(container, [{
-            y: prices,
-            type: 'scatter',
-            mode: 'lines',
-            fill: 'tozeroy',
-            fillcolor: isUp ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-            line: { color: color, width: 1.5 },
-        }], {
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            margin: { l: 0, r: 0, t: 0, b: 0 },
-            xaxis: { visible: false },
-            yaxis: { visible: false },
-            showlegend: false,
-        }, { staticPlot: true, responsive: true });
-    }
-
-    // ==========================================
-    // GENERIC CHART RENDER
-    // ==========================================
-    function renderChart(containerId, chartData) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = '';
-        Plotly.newPlot(container, chartData.data, chartData.layout, {
+    function renderChart(id, cd) {
+        const el = document.getElementById(id);
+        el.innerHTML = '';
+        Plotly.newPlot(el, cd.data, cd.layout, {
             responsive: true,
-            displayModeBar: false,
             autosize: true,
+            displayModeBar: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: [
+                'zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d',
+                'autoScale2d', 'hoverClosestCartesian', 'hoverCompareCartesian',
+                'toggleSpikelines', 'resetScale2d'
+            ],
+            toImageButtonOptions: {
+                format: 'png',
+                filename: CUR_TICKER || 'chart',
+                height: 800,
+                width: 1400,
+                scale: 2
+            }
         });
     }
 
-    // ==========================================
-    // NEWS PANEL
-    // ==========================================
+    function renderInfoStrip(d) {
+        document.getElementById('info-strip').style.display = 'flex';
+        document.getElementById('s-price').textContent = d.current_price ? `$${d.current_price}` : '—';
+        const up = d.change_pct >= 0;
+        const cEl = document.getElementById('s-chg');
+        cEl.textContent = `${up ? '▲' : '▼'} ${Math.abs(d.change_pct)}% ($${Math.abs(d.change || 0).toFixed(2)})`;
+        cEl.className = `text-xs font-semibold font-mono ${up ? 'text-green-400' : 'text-red-400'}`;
+        document.getElementById('s-open').textContent = d.open_price ? `$${d.open_price}` : '—';
+        document.getElementById('s-prev').textContent = d.prev_close ? `$${d.prev_close}` : '—';
+        document.getElementById('s-vol').textContent = d.volume || '—';
+        document.getElementById('s-mcap').textContent = d.market_cap || '—';
+        if (d.fifty_two_week_high && d.fifty_two_week_low)
+            document.getElementById('s-52w').textContent = `$${d.fifty_two_week_low}/$${d.fifty_two_week_high}`;
+        if (d.sparkline?.length > 1) {
+            const c = d.change_pct >= 0 ? '#22c55e' : '#ef4444';
+            Plotly.newPlot('sparkline', [{ y: d.sparkline, type: 'scatter', mode: 'lines', fill: 'tozeroy', fillcolor: d.change_pct >= 0 ? 'rgba(34,197,94,.1)' : 'rgba(239,68,68,.1)', line: { color: c, width: 1.5 } }],
+                { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', margin: { l: 0, r: 0, t: 0, b: 0 }, xaxis: { visible: false }, yaxis: { visible: false }, showlegend: false }, { staticPlot: true, responsive: true });
+        }
+    }
+
+    // ---- News ----
     async function loadNews(ticker) {
-        const placeholder = document.getElementById('news-placeholder');
+        document.getElementById('news-placeholder').style.display = 'none';
         const loader = document.getElementById('news-loader');
-        const listEl = document.getElementById('news-list');
-        const labelEl = document.getElementById('news-ticker-label');
-
-        if (placeholder) placeholder.style.display = 'none';
-        loader.classList.remove('hidden');
-        listEl.classList.add('hidden');
-        listEl.innerHTML = '';
-        labelEl.textContent = ticker;
-
+        const list = document.getElementById('news-list');
+        loader.classList.remove('hidden'); loader.classList.add('flex');
+        list.classList.add('hidden'); list.classList.remove('flex'); list.innerHTML = '';
+        document.getElementById('news-lbl').textContent = ticker;
         try {
-            const res = await fetch(`/api/stock-news/${ticker}/`);
-            const data = await res.json();
-            loader.classList.add('hidden');
-
-            if (data.news && data.news.length > 0) {
-                listEl.classList.remove('hidden');
-                listEl.classList.add('flex');
-                data.news.forEach(item => {
+            const d = await (await fetch(`/api/stock-news/${ticker}/`)).json();
+            loader.classList.add('hidden'); loader.classList.remove('flex');
+            list.classList.remove('hidden'); list.classList.add('flex');
+            if (d.news?.length) {
+                d.news.forEach(n => {
                     const el = document.createElement('div');
-                    el.className = 'news-card cursor-pointer';
-                    el.innerHTML = `
-                        <a href="${item.url || '#'}" target="_blank" rel="noopener" class="block">
-                            <div class="text-xs font-semibold text-gray-200 leading-snug mb-1">${item.title}</div>
-                            ${item.summary ? `<div class="text-[10px] text-gray-500 leading-snug line-clamp-2">${item.summary}</div>` : ''}
-                            <div class="flex items-center gap-2 mt-1.5">
-                                ${item.source ? `<span class="text-[9px] text-cyan-600 font-medium">${item.source}</span>` : ''}
-                                ${item.published ? `<span class="text-[9px] text-gray-600">${item.published}</span>` : ''}
-                            </div>
-                        </a>
-                    `;
-                    listEl.appendChild(el);
+                    el.className = 'news-card';
+                    el.innerHTML = `<a href="${n.url || '#'}" target="_blank" class="block">
+          <div class="text-xs font-semibold text-gray-200 leading-snug mb-1">${n.title}</div>
+          ${n.summary ? `<div class="text-[10px] text-gray-500 line-clamp-2">${n.summary}</div>` : ''}
+          <div class="flex gap-2 mt-1">${n.source ? `<span class="text-[9px] text-cyan-600">${n.source}</span>` : ''} ${n.published ? `<span class="text-[9px] text-gray-600">${n.published}</span>` : ''}</div>
+        </a>`;
+                    list.appendChild(el);
                 });
-            } else {
-                listEl.classList.remove('hidden');
-                listEl.classList.add('flex');
-                listEl.innerHTML = '<div class="p-4 text-xs text-gray-600 text-center">No recent news found.</div>';
-            }
-        } catch (e) {
-            loader.classList.add('hidden');
-            listEl.classList.remove('hidden');
-            listEl.innerHTML = '<div class="p-4 text-xs text-gray-600 text-center">Failed to load news.</div>';
-        }
+            } else list.innerHTML = '<div class="p-4 text-xs text-gray-600 text-center">No recent news.</div>';
+        } catch { loader.classList.add('hidden'); list.innerHTML = '<div class="p-4 text-xs text-gray-600 text-center">Failed to load.</div>'; }
     }
 
-    // ==========================================
-    // MARKET STATUS
-    // ==========================================
-    async function updateMarketStatus() {
+    // ---- Market Status ----
+    async function updateMarket() {
         try {
-            const res = await fetch('/api/market-status/');
-            const data = await res.json();
-            const dot = document.getElementById('market-dot');
-            const text = document.getElementById('market-text');
-            const timeEl = document.getElementById('market-time');
-
-            if (data.is_open) {
-                dot.className = 'w-2 h-2 bg-green-500 rounded-full animate-pulse market-badge-dot';
-                text.className = 'text-xs text-green-400';
-                text.textContent = 'Market Open';
-            } else {
-                dot.className = 'w-2 h-2 bg-red-500 rounded-full market-badge-dot';
-                text.className = 'text-xs text-red-400';
-                text.textContent = 'Market Closed';
-            }
-            if (data.current_time_et) {
-                timeEl.textContent = data.current_time_et;
-            }
-        } catch (e) {
-            console.error('Market status error:', e);
-        }
+            const d = await (await fetch('/api/market-status/')).json();
+            const dot = document.getElementById('market-dot'), txt = document.getElementById('market-text'), tim = document.getElementById('market-time');
+            if (d.is_open) { dot.className = 'w-2 h-2 bg-green-500 rounded-full animate-pulse'; txt.className = 'text-xs text-green-400'; txt.textContent = 'Market Open'; }
+            else { dot.className = 'w-2 h-2 bg-red-500 rounded-full'; txt.className = 'text-xs text-red-400'; txt.textContent = 'Market Closed'; }
+            if (d.current_time_et) tim.textContent = d.current_time_et;
+        } catch { }
     }
 
-    // ==========================================
-    // LIVE TICKER TAPE
-    // ==========================================
-    async function updateTickerTape() {
+    // ---- Ticker Tape ----
+    async function updateTape() {
         try {
-            const res = await fetch('/api/live-tickers/');
-            const data = await res.json();
+            const d = await (await fetch('/api/live-tickers/')).json();
             const tape = document.getElementById('ticker-tape');
+            if (!d.tickers?.length) return;
+            const chips = d.tickers.map(t => {
+                const col = t.is_up ? '#22c55e' : '#ef4444';
+                const arr = t.is_up ? '▲' : '▼';
+                const addB = t.in_portfolio ? '' : `<span class="chip-add" onclick="event.stopPropagation();addFromTape('${t.ticker}')" title="Add to portfolio">+</span>`;
 
-            if (!data.tickers || data.tickers.length === 0) {
-                tape.innerHTML = '<span class="ticker-chip text-gray-600">Add stocks to see live prices</span>';
-                return;
-            }
-
-            // Update portfolio button prices too
-            data.tickers.forEach(t => {
-                const el = document.getElementById(`price-${t.ticker}`);
-                if (el) {
-                    const sign = t.is_up ? '+' : '';
-                    el.textContent = `$${t.price} ${sign}${t.change_pct}%`;
-                    el.className = `text-[10px] font-mono mt-0.5 ${t.is_up ? 'text-green-400' : 'text-red-400'}`;
+                // Also refresh the portfolio chip price label
+                const priceEl = document.getElementById(`pticker-price-${t.ticker}`);
+                if (priceEl) {
+                    priceEl.textContent = `$${t.price} ${t.is_up ? '+' : ''}${t.change_pct}%`;
+                    priceEl.className = `px ${t.is_up ? 'up' : 'dn'}`;
                 }
-            });
 
-            const buildChips = (tickers) => tickers.map(t => {
-                const color = t.is_up ? '#22c55e' : '#ef4444';
-                const arrow = t.is_up ? '▲' : '▼';
-                const sign = t.is_up ? '+' : '';
-                return `<span class="ticker-chip">
-                    <span style="color:#22d3ee;font-weight:700">${t.ticker}</span>
-                    <span style="color:white">$${t.price}</span>
-                    <span style="color:${color}">${arrow} ${sign}${t.change_pct}%</span>
-                </span>`;
+                return `<span class="t-chip" onclick="loadTicker('${t.ticker}',null)">
+        <span style="color:#22d3ee;font-weight:700">${t.ticker}</span>
+        <span style="color:#fff">$${t.price}</span>
+        <span style="color:${col}">${arr} ${t.is_up ? '+' : ''}${t.change_pct}%</span>${addB}
+      </span>`;
             }).join('');
-
-            const chips = buildChips(data.tickers);
-            // Duplicate for seamless loop
             tape.innerHTML = chips + chips;
-
-        } catch (e) {
-            console.error('Ticker tape error:', e);
-        }
+        } catch { }
     }
 
-    // ==========================================
-    // TOP 15 STOCKS
-    // ==========================================
-    function toggleTop15() {
-        top15Visible = !top15Visible;
-        const panel = document.getElementById('top15-panel');
-        if (top15Visible) {
-            panel.classList.add('visible');
-            if (!top15Loaded) {
-                loadTop15();
-            }
-        } else {
-            panel.classList.remove('visible');
-        }
-    }
 
+    // ---- Top 15 ----
     async function loadTop15() {
         try {
-            const res = await fetch('/api/top-stocks/');
-            const data = await res.json();
-
-            document.getElementById('top15-loader').classList.add('hidden');
-            const table = document.getElementById('top15-table');
-            table.classList.remove('hidden');
-            const tbody = document.getElementById('top15-tbody');
-            tbody.innerHTML = '';
-
-            (data.stocks || []).forEach((stock, i) => {
-                const isUp = stock.change_pct >= 0;
-                const sign = isUp ? '+' : '';
-                const color = isUp ? 'text-green-400' : 'text-red-400';
+            const d = await (await fetch('/api/top-stocks/')).json();
+            document.getElementById('t15-loader').classList.add('hidden');
+            const tbl = document.getElementById('t15-table');
+            tbl.classList.remove('hidden');
+            const tb = document.getElementById('t15-body');
+            tb.innerHTML = '';
+            (d.stocks || []).forEach((s, i) => {
+                const up = s.change_pct >= 0;
                 const row = document.createElement('tr');
-                row.className = 'border-b border-gray-800/50 hover:bg-gray-900/50 transition-colors';
-                row.innerHTML = `
-                    <td class="px-4 py-2 text-gray-600">${i + 1}</td>
-                    <td class="px-4 py-2 font-bold text-cyan-400 font-mono">${stock.ticker}</td>
-                    <td class="px-4 py-2 text-gray-400 max-w-[180px] truncate">${stock.name}</td>
-                    <td class="px-4 py-2 text-right font-mono text-white">$${stock.price.toLocaleString()}</td>
-                    <td class="px-4 py-2 text-right font-mono ${color}">${sign}${stock.change_pct}%</td>
-                `;
-                tbody.appendChild(row);
+                row.innerHTML = `<td class="text-gray-600">${i + 1}</td>
+        <td class="font-bold text-cyan-400 font-mono cursor-pointer hover:text-white" onclick="loadTicker('${s.ticker}',null)">${s.ticker}</td>
+        <td class="text-gray-400 max-w-[180px] truncate">${s.name}</td>
+        <td class="text-right font-mono text-white">$${s.price.toLocaleString()}</td>
+        <td class="text-right font-mono ${up ? 'text-green-400' : 'text-red-400'}">${up ? '+' : ''}${s.change_pct}%</td>`;
+                tb.appendChild(row);
             });
-
-            top15Loaded = true;
-        } catch (e) {
-            console.error('Top 15 error:', e);
-        }
+        } catch (e) { console.error(e); }
     }
 
-    // ==========================================
-    // AUTO TRAIN
-    // ==========================================
-    async function triggerAutoTrain() {
-        if (!currentTicker) return;
-        const btn = document.getElementById('auto-train-btn');
-        btn.disabled = true;
-        btn.innerHTML = `<div class="w-3 h-3 border-2 border-gray-600 border-t-cyan-500 rounded-full animate-spin"></div> Training...`;
-
+    // ---- Add to portfolio (core) ----
+    async function addToPortfolioCore(ticker) {
         try {
-            const res = await fetch(`/api/auto-train/${currentTicker}/`);
-            const data = await res.json();
-            btn.innerHTML = `✅ Training Started`;
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.innerHTML = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Auto-Train`;
-            }, 4000);
-        } catch (e) {
-            btn.innerHTML = `❌ Failed`;
-            btn.disabled = false;
-        }
+            return await (await fetch('/add-portfolio/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker }) })).json();
+        } catch { return null; }
     }
 
-    // ==========================================
-    // REMOVE FROM PORTFOLIO
-    // ==========================================
+    function injectCard(ticker, addedAt) {
+        document.getElementById('empty-msg')?.remove();
+        if (document.getElementById(`pticker-${ticker}`)) return;
+        const c = document.getElementById('portfolio-tickers');
+        const d = document.createElement('div');
+        d.className = 'pt-btn fia'; d.id = `pticker-${ticker}`;
+        d.onclick = () => loadTicker(ticker, d);
+        d.innerHTML = `<button class="rm-btn" onclick="event.stopPropagation();removeFromPortfolio('${ticker}')">✕</button>
+    <span class="tk">${ticker}</span>
+    <span class="px" id="pticker-price-${ticker}">—</span>`;
+        c.appendChild(d);
+        PTICKERS.push(ticker);
+    }
+
+    async function addToPortfolio(ticker) {
+        const d = await addToPortfolioCore(ticker);
+        if (d?.status === 'added') { injectCard(d.ticker, d.added_at); updateTape(); }
+    }
+
+    async function addFromTape(ticker) {
+        const d = await addToPortfolioCore(ticker);
+        if (d?.status === 'added') { injectCard(d.ticker, d.added_at); updateTape(); }
+    }
+
     async function removeFromPortfolio(ticker) {
         try {
-            const res = await fetch('/remove-portfolio/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker })
-            });
-            const data = await res.json();
-            if (data.status === 'removed') {
-                const el = document.getElementById(`pticker-${ticker}`);
-                if (el) el.remove();
-                // Remove from in-memory portfolio list
-                const idx = PORTFOLIO_TICKERS.indexOf(ticker);
-                if (idx > -1) PORTFOLIO_TICKERS.splice(idx, 1);
-            } else {
-                alert(data.message);
+            const d = await (await fetch('/remove-portfolio/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker }) })).json();
+            if (d.status === 'removed') {
+                document.getElementById(`pticker-${ticker}`)?.remove();
+                const i = PTICKERS.indexOf(ticker); if (i > -1) PTICKERS.splice(i, 1);
+                updateTape();
             }
-        } catch (e) {
-            alert('Failed to remove from portfolio');
-        }
+        } catch { alert('Failed to remove.'); }
     }
 
-    // ==========================================
-    // ADD TO PORTFOLIO (from chat)
-    // ==========================================
-    async function addToPortfolio(ticker) {
-        try {
-            const res = await fetch('/add-portfolio/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker })
-            });
-            const data = await res.json();
-            if (data.status === 'added') {
-                location.reload();
-            } else {
-                alert(data.message);
-            }
-        } catch (err) {
-            alert('Failed to update portfolio');
-        }
+    // ---- Auto-train ----
+    async function triggerTrain() {
+        if (!CUR_TICKER) return;
+        const b = document.getElementById('train-btn');
+        b.disabled = true;
+        b.innerHTML = `<div class="w-3 h-3 border-2 border-gray-600 border-t-cyan-500 rounded-full animate-spin"></div> Training...`;
+        await fetch(`/api/auto-train/${CUR_TICKER}/`).catch(() => { });
+        b.innerHTML = '✅ Started';
+        setTimeout(() => { b.disabled = false; b.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Auto-Train'; }, 4000);
     }
 
-    // ==========================================
-    // CHAT
-    // ==========================================
+    // ---- Chat ----
     document.addEventListener('DOMContentLoaded', () => {
-        const form = document.getElementById('query-form');
-        const input = document.getElementById('query-input');
-        const chatContainer = document.getElementById('chat-container');
+        updateMarket(); setInterval(updateMarket, 60000);
+        updateTape(); setInterval(updateTape, 30000);
+        loadTop15();
 
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const query = input.value.trim();
-                if (!query) return;
+        const form = document.getElementById('chat-form');
+        const input = document.getElementById('chat-input');
+        const box = document.getElementById('chat-box');
 
-                appendMessage(query, true);
-                input.value = '';
-
-                const loadingId = "loading-" + Date.now();
-                appendLoading(loadingId);
-
-                try {
-                    const res = await fetch('/predict', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query })
-                    });
-
-                    const data = await res.json();
-                    removeLoading(loadingId);
-                    if (!res.ok) throw new Error(data.error);
-
-                    appendBotResponse(data);
-
-                    if (data.chart_data) {
-                        renderChart('analysis-chart-container', data.chart_data);
-                        switchTab('tab-analysis');
-                        document.getElementById('analysis-badge').classList.remove('hidden');
-                    }
-
-                } catch (err) {
-                    removeLoading(loadingId);
-                    appendMessage("Error: " + err.message, false);
-                }
-            });
-        }
-
-        function appendMessage(text, isUser) {
-            const div = document.createElement('div');
-            if (isUser) {
-                div.className = "flex justify-end animate-fade-in-up";
-                div.innerHTML = `<div class="bg-cyan-600 text-white px-3 py-2 rounded-xl rounded-tr-sm max-w-[90%] shadow-lg text-sm">${text}</div>`;
-            } else {
-                div.className = "flex justify-start gap-2 animate-fade-in";
-                div.innerHTML = `
-                    <div class="w-6 h-6 rounded bg-red-500/10 border border-red-500/20 flex-shrink-0 flex items-center justify-center text-red-400 text-[10px] font-bold">!</div>
-                    <div class="bg-gray-800 border border-red-900/50 text-red-200 px-3 py-2 rounded-xl rounded-tl-sm max-w-[90%] text-sm">${text}</div>`;
-            }
-            chatContainer.appendChild(div);
-            scrollBottom();
-        }
-
-        function appendLoading(id) {
-            const div = document.createElement('div');
-            div.id = id;
-            div.className = "flex justify-start gap-2 animate-pulse";
-            div.innerHTML = `
-                <div class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0"></div>
-                <div class="h-8 bg-gray-800 rounded-xl w-20"></div>
-            `;
-            chatContainer.appendChild(div);
-            scrollBottom();
-        }
-
-        function removeLoading(id) {
-            const el = document.getElementById(id);
-            if (el) el.remove();
-        }
-
-        function appendBotResponse(data) {
-            const wrapper = document.createElement('div');
-            wrapper.className = "flex items-start gap-2 animate-fade-in";
-
-            const icon = `<div class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0 flex items-center justify-center text-cyan-200 text-[10px] font-bold border border-cyan-700">AI</div>`;
-
-            let contentHtml = `<div class="bg-gray-800 border border-gray-700 rounded-xl rounded-tl-sm p-3 text-sm text-gray-300 shadow-sm w-full max-w-[95%]">`;
-
-            if (data.summary) {
-                contentHtml += `<div class="prose prose-invert prose-sm max-w-none mb-2 leading-snug">${marked.parse(data.summary)}</div>`;
-            }
-
-            if (data.predictions && data.predictions.length > 0) {
-                // Only show +Watch if not already in portfolio
-                const alreadyInPortfolio = PORTFOLIO_TICKERS.includes(data.ticker);
-                const watchBtn = alreadyInPortfolio
-                    ? `<span class="text-[10px] text-gray-500 flex items-center gap-1">✓ In Portfolio</span>`
-                    : `<button onclick="addToPortfolio('${data.ticker}')" class="text-[10px] text-cyan-300 hover:text-white transition-colors cursor-pointer">+Watch</button>`;
-
-                contentHtml += `
-                    <div class="mt-2 border-t border-gray-700/50 pt-2">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-[10px] text-cyan-400 uppercase">Forecast</span>
-                            ${watchBtn}
-                        </div>
-                        <div class="grid grid-cols-3 gap-1">
-                            ${data.predictions.slice(0, 3).map(p => `
-                                <div class="bg-gray-900/50 rounded p-1 text-center border border-gray-700/30">
-                                    <div class="text-[9px] text-gray-500">Day ${p.day}</div>
-                                    <div class="text-xs font-mono text-white">$${p.predicted_close.toFixed(0)}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            contentHtml += `</div>`;
-            wrapper.innerHTML = icon + contentHtml;
-            chatContainer.appendChild(wrapper);
-            scrollBottom();
-        }
-
-        function scrollBottom() {
-            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-        }
-
-        // ---- INIT ----
-        updateMarketStatus();
-        setInterval(updateMarketStatus, 60000);
-
-        updateTickerTape();
-        setInterval(updateTickerTape, 30000);
-
-        // Show "Top 15" toggle button + trigger on scroll
-        const mainPanel = document.querySelector('.area-main');
-        const revealBtn = document.getElementById('reveal-top15-btn');
-        revealBtn.style.display = 'flex';
-
-        // Scroll in main to trigger top15
-        mainPanel.addEventListener('scroll', () => {
-            if (mainPanel.scrollTop > 40) {
-                revealBtn.style.display = 'flex';
-            }
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const q = input.value.trim(); if (!q) return;
+            addMsg(q, true); input.value = '';
+            const lid = 'l' + Date.now(); addLoad(lid);
+            try {
+                const res = await fetch('/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
+                const data = await res.json();
+                rmLoad(lid);
+                if (!res.ok) throw new Error(data.error);
+                addBot(data);
+                if (data.chart_data) { renderChart('a-chart', data.chart_data); switchTab('tab-a'); document.getElementById('ai-dot').classList.remove('hidden'); }
+            } catch (err) { rmLoad(lid); addMsg('Error: ' + err.message, false); }
         });
+
+        function addMsg(text, isUser) {
+            const d = document.createElement('div');
+            d.className = isUser ? 'flex justify-end fia' : 'flex justify-start gap-2 fia';
+            d.innerHTML = isUser
+                ? `<div class="bg-cyan-600 text-white px-3 py-2 rounded-xl rounded-tr-sm max-w-[90%] text-sm">${text}</div>`
+                : `<div class="w-6 h-6 rounded bg-red-500/10 border border-red-500/20 flex-shrink-0 flex items-center justify-center text-red-400 text-[10px] font-bold">!</div><div class="bg-gray-800 border border-red-900/50 text-red-200 px-3 py-2 rounded-xl rounded-tl-sm max-w-[90%] text-sm">${text}</div>`;
+            box.appendChild(d); box.scrollTop = box.scrollHeight;
+        }
+        function addLoad(id) {
+            const d = document.createElement('div'); d.id = id; d.className = 'flex gap-2 animate-pulse';
+            d.innerHTML = '<div class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0"></div><div class="h-8 bg-gray-800 rounded-xl w-20"></div>';
+            box.appendChild(d); box.scrollTop = box.scrollHeight;
+        }
+        function rmLoad(id) { document.getElementById(id)?.remove(); }
+        function addBot(data) {
+            const w = document.createElement('div'); w.className = 'flex items-start gap-2 fia';
+            let h = `<div class="w-6 h-6 rounded bg-cyan-900 flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-cyan-300 border border-cyan-700">AI</div>`;
+            h += `<div class="bg-gray-800 border border-gray-700 rounded-xl rounded-tl-sm p-3 text-sm text-gray-300 w-full max-w-[95%]">`;
+            if (data.summary) h += `<div class="prose prose-invert prose-sm max-w-none mb-2">${marked.parse(data.summary)}</div>`;
+            if (data.predictions?.length) {
+                const inP = PTICKERS.includes(data.ticker);
+                const wb = inP ? `<span class="text-[10px] text-gray-500">✓ In Portfolio</span>` : `<button onclick="addToPortfolio('${data.ticker}')" class="text-[10px] text-cyan-300 hover:text-white">+Watch</button>`;
+                h += `<div class="border-t border-gray-700/50 pt-2 mt-2"><div class="flex justify-between items-center mb-1"><span class="text-[10px] font-bold text-cyan-400 uppercase">Forecast</span>${wb}</div>
+        <div class="grid grid-cols-3 gap-1">${data.predictions.slice(0, 3).map(p => `<div class="bg-gray-900/50 rounded p-1 text-center border border-gray-700/30"><div class="text-[9px] text-gray-500">Day ${p.day}</div><div class="text-xs font-mono text-white">$${p.predicted_close.toFixed(0)}</div></div>`).join('')}</div></div>`;
+            }
+            h += '</div>'; w.innerHTML = h;
+            box.appendChild(w); box.scrollTop = box.scrollHeight;
+        }
     });
 </script>
 {% endblock %}

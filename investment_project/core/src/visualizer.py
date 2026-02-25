@@ -127,14 +127,14 @@ def generate_interactive_chart(ticker, predicted_prices):
     return json.loads(json.dumps(fig, cls=PlotlyJSONEncoder))
 
 
-def generate_candlestick_chart(ticker):
+def generate_candlestick_chart(ticker, period='5d'):
     """
-    Generates a polished Plotly Candlestick chart for the portfolio view,
-    with gradient shading and a 20-day MA overlay.
+    Generates a polished Plotly Candlestick chart for the portfolio view.
+    period: yfinance period string (5d, 1mo, 3mo, 6mo, 1y, 2y)
     """
     import datetime
     try:
-        history = yf.download(ticker, period='6mo', interval='1d', auto_adjust=False)
+        history = yf.download(ticker, period=period, interval='1d', auto_adjust=False)
 
         if history.empty:
             return None
@@ -154,10 +154,6 @@ def generate_candlestick_chart(ticker):
 
         if not dates:
             return None
-
-        # 20-day MA
-        close_series = pd.Series(closes)
-        ma20 = close_series.rolling(window=20).mean().tolist()
 
         fig = go.Figure()
 
@@ -190,15 +186,18 @@ def generate_candlestick_chart(ticker):
             decreasing_fillcolor='rgba(239,68,68,0.6)',
         ))
 
-        # --- 20-day MA overlay ---
-        fig.add_trace(go.Scatter(
-            x=dates,
-            y=ma20,
-            mode='lines',
-            name='20-Day MA',
-            line=dict(color='#f59e0b', width=1.5, dash='dot'),
-            opacity=0.85,
-        ))
+        # --- 20-day MA overlay (only when sufficient data) ---
+        if len(closes) >= 20:
+            close_series = pd.Series(closes)
+            ma20 = close_series.rolling(window=20).mean().tolist()
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=ma20,
+                mode='lines',
+                name='20-Day MA',
+                line=dict(color='#f59e0b', width=1.5, dash='dot'),
+                opacity=0.85,
+            ))
 
         # --- Close line with gradient fill ---
         fig.add_trace(go.Scatter(
@@ -213,7 +212,7 @@ def generate_candlestick_chart(ticker):
         ))
 
         fig.update_layout(
-            title=dict(text=f'{ticker} — 6 Month Chart', font=dict(size=14, color='#e5e7eb')),
+            title=dict(text=f'{ticker} — {period} Chart', font=dict(size=14, color='#e5e7eb')),
             template="plotly_dark",
             paper_bgcolor='rgba(17,24,39,1)',
             plot_bgcolor='rgba(17,24,39,1)',
