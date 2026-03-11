@@ -96,13 +96,9 @@ def load_and_predict(ticker, days_ahead=7):
     model_path = os.path.join(MODEL_DIR, f"{ticker}_model.h5")
     scaler_path = os.path.join(MODEL_DIR, f"{ticker}_scaler.pkl")
 
-    # 1. Check if files exist
+    # 1. Check if files exist — do NOT train on the fly; let the caller handle it
     if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-        # Fallback: Try to train it on the fly if missing (optional)
-        print(f"Model/Scaler not found for {ticker}. Training now...")
-        train_and_save_model(ticker)
-        if not os.path.exists(model_path):
-             raise FileNotFoundError(f"Could not train/find model for {ticker}")
+        raise FileNotFoundError(f"No trained model found for {ticker}. Please add it to your portfolio and use Auto-Train.")
 
     # 2. Load Resources
     model = load_model(model_path)

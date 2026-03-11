@@ -45,12 +45,17 @@ def get_entities_with_llm(query):
     """
     system_prompt = """
     You are an expert at understanding financial queries. Extract these entities:
-    - task: The user's goal. If the user mentions a company name but no specific verb, assume 'predict'.
+    - task: The user's goal. If the user mentions a company name or ticker but no specific verb, assume 'predict'.
     - metric: The financial metric (e.g., 'stock price').
-    - company: The company name.
+    - company: The company name (e.g., 'Mastercard', 'Apple', 'Tesla', 'Visa').
+    - ticker: The NYSE/NASDAQ stock ticker symbol. You MUST always provide this if a company is mentioned.
+      Examples: Apple='AAPL', Tesla='TSLA', Mastercard='MA', Visa='V', Google='GOOGL',
+      Amazon='AMZN', Microsoft='MSFT', Meta='META', Netflix='NFLX', Nvidia='NVDA',
+      JPMorgan='JPM', Berkshire='BRK-B'. If user provides a ticker directly, use it as-is.
     - time_period: A dictionary with 'value' (int) and 'unit' (string).
     
-    Return ONLY a JSON object. If an entity is missing, omit it.
+    IMPORTANT: You MUST always include the 'ticker' field whenever a company or ticker is mentioned.
+    Return ONLY a JSON object. If an entity is missing, omit it (but never omit ticker if company is present).
     """
     try:
         response = model.generate_content(
@@ -63,26 +68,72 @@ def get_entities_with_llm(query):
     except Exception as e:
         return {"error": str(e)}
 
+
+def resolve_ticker(company, entities):
+    """
+    Resolves a company name to a stock ticker using multiple strategies:
+    1. Hardcoded TICKER_MAP
+    2. Gemini-extracted ticker from entities
+    3. yfinance search as final fallback
+    """
+    if not company:
+        return None
+    
+    # Strategy 1: Hardcoded map
+    ticker = TICKER_MAP.get(company.capitalize())
+    if ticker:
+        return ticker
+    
+    # Strategy 2: Gemini-extracted ticker
+    ticker = entities.get('ticker')
+    if ticker:
+        return ticker.upper()
+    
+    # Strategy 3: yfinance search
+    try:
+        search = yf.Ticker(company.upper())
+        info = search.info
+        if info and info.get('symbol'):
+            return info['symbol']
+    except Exception:
+        pass
+    
+    # Strategy 4: Try treating the company name as a ticker directly
+    try:
+        search = yf.Ticker(company.upper())
+        hist = search.history(period='1d')
+        if not hist.empty:
+            return company.upper()
+    except Exception:
+        pass
+    
+    return None
+
 # ==========================================
 #  HELPER: Summarization
 # ==========================================
-def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data):
+def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data, current_price=None):
     """
     Generates a natural language summary of the AI's forecast.
+    Uses current_price as the baseline so single-day forecasts don't show 0% change.
     """
-    start_price = predictions_data[0]['predicted_close']
+    # Use actual current price as baseline; fall back to first prediction if unavailable
+    baseline = current_price if current_price else predictions_data[0]['predicted_close']
     end_price = predictions_data[-1]['predicted_close']
-    change = end_price - start_price
-    percent_change = (change / start_price) * 100 if start_price != 0 else 0
-    
+    change = end_price - baseline
+    percent_change = (change / baseline) * 100 if baseline != 0 else 0
+
     trend = "an upward" if change > 0 else "a downward"
-    if abs(percent_change) < 1: trend = "relatively stable"
+    if abs(percent_change) < 0.5:
+        trend = "relatively stable"
 
     prediction_details = (
         f"Company: {company} ({ticker})\n"
-        f"Period: {days_ahead} days\n"
-        f"Trend: {trend} ({percent_change:.2f}%)\n"
-        f"Start: ${start_price:.2f}, End: ${end_price:.2f}\n"
+        f"Current price: ${baseline:.2f}\n"
+        f"Period: {days_ahead} day{'s' if days_ahead != 1 else ''}\n"
+        f"Predicted end price: ${end_price:.2f}\n"
+        f"Expected change: {'+' if change >= 0 else ''}{change:.2f} ({'+' if percent_change >= 0 else ''}{percent_change:.2f}%)\n"
+        f"Trend: {trend}\n"
     )
 
     prompt = f"""
@@ -92,7 +143,7 @@ def summarize_predictions_with_llm(company, ticker, days_ahead, predictions_data
     Requirements:
     1. Length: Moderate (3 to 5 sentences).
     2. Formatting: Use **bold** for key prices and percentages.
-    3. Content: Explain the trend clearly.
+    3. Content: Explain the trend clearly, referencing the current price and predicted end price.
     4. MANDATORY: End with "Disclaimer: This is an AI-generated prediction and not financial advice."
     """
     try:
@@ -138,15 +189,28 @@ def predict(request):
         entities = get_entities_with_llm(query)
         task = entities.get('task')
         company = entities.get('company')
+        ticker = entities.get('ticker')
         time_period = entities.get('time_period')
 
         # 3. Determine Intent
         is_prediction_task = (task == 'predict') or (company and not task) or (company and task == 'unknown')
 
+        # --- Follow-up resolution: if no company extracted but a time period was given,
+        #     reuse the last company/ticker from the session (e.g. "what about 4 days?")
+        if not company and time_period:
+            company = request.session.get('last_company')
+            ticker_override = request.session.get('last_ticker')
+            if company:
+                is_prediction_task = True
+                ticker = ticker_override
+        else:
+            ticker_override = None
+
         # --- BRANCH A: Prediction & Visualization ---
         if is_prediction_task and company:
-            ticker = TICKER_MAP.get(company.capitalize())
-            
+            # Multi-strategy ticker resolution: TICKER_MAP → Gemini → yfinance
+            ticker = ticker or resolve_ticker(company, entities)
+
             if ticker:
                 # Resolve Timeframe (Session Memory)
                 last_days_ahead = request.session.get('last_days_ahead', 7)
@@ -160,12 +224,29 @@ def predict(request):
                     else: days_ahead = val
 
                 request.session['last_days_ahead'] = days_ahead
+                request.session['last_company'] = company
+                request.session['last_ticker'] = ticker
 
                 # A. Run Prediction Model (Actual LSTM)
                 try:
                     predictions_list = load_and_predict(ticker, days_ahead)
+                except FileNotFoundError:
+                    # Model not trained yet — guide the user
+                    return JsonResponse({
+                        "summary": (
+                            f"I don't have a trained model for **{company} ({ticker})** yet. "
+                            f"To get predictions:\n\n"
+                            f"1. Click **+ Add** to add {ticker} to your portfolio.\n"
+                            f"2. Open the stock chart and click **Auto-Train** to train the model.\n"
+                            f"3. Once training completes, ask me again!"
+                        ),
+                        "no_model": True,
+                        "ticker": ticker,
+                        "company": company,
+                        "is_follow_up": True
+                    })
                 except Exception as e:
-                     return JsonResponse({"error": f"Prediction Error: {str(e)}"}, status=500)
+                    return JsonResponse({"error": f"Prediction Error: {str(e)}"}, status=500)
 
                 # B. Generate Interactive Chart
                 chart_data = generate_interactive_chart(ticker, predictions_list)
@@ -175,8 +256,16 @@ def predict(request):
                     for i, p in enumerate(predictions_list)
                 ]
 
-                # C. Generate Summary
-                summary = summarize_predictions_with_llm(company, ticker, days_ahead, formatted_predictions)
+                # C. Fetch current price as baseline for accurate % change
+                try:
+                    current_price = yf.Ticker(ticker).info.get('currentPrice') or \
+                                    yf.Ticker(ticker).info.get('regularMarketPrice')
+                    current_price = round(float(current_price), 2) if current_price else None
+                except Exception:
+                    current_price = None
+
+                # D. Generate Summary
+                summary = summarize_predictions_with_llm(company, ticker, days_ahead, formatted_predictions, current_price)
 
                 # Update History
                 chat_history.append({"role": "user", "parts": [query]})
@@ -190,13 +279,46 @@ def predict(request):
                     "predictions": formatted_predictions,
                     "summary": summary,
                     "chart_data": chart_data,
-                    "is_follow_up": True 
+                    "is_follow_up": True
                 })
 
         # --- BRANCH B: General Chat Fallback ---
+        # If we got here with a company/ticker that was recognized as a prediction task
+        # but the ticker didn't resolve, handle it explicitly
+        if is_prediction_task and company:
+            # Company was recognized but no ticker found
+            ticker_attempt = ticker or entities.get('ticker')
+            if ticker_attempt:
+                # Ticker found but missed by Branch A — likely no model
+                return JsonResponse({
+                    "summary": (
+                        f"I don't have a trained model for **{company} ({ticker_attempt})** yet. "
+                        f"To get predictions:\n\n"
+                        f"1. Click **+ Add** to add {ticker_attempt} to your portfolio.\n"
+                        f"2. Open the stock chart and click **Auto-Train** to train the model.\n"
+                        f"3. Once training completes, ask me again!"
+                    ),
+                    "no_model": True,
+                    "ticker": ticker_attempt,
+                    "company": company,
+                    "is_follow_up": True
+                })
+            else:
+                return JsonResponse({
+                    "summary": f"I couldn't find a valid stock ticker for **{company}**. Please try using the ticker symbol directly (e.g., 'predict AAPL for 3 days').",
+                    "is_follow_up": True
+                })
+
         try:
             chat = model.start_chat(history=chat_history)
-            final_query = f"{query} (Please keep the answer moderate in length, approx 3-5 sentences)"
+            # IMPORTANT: Prevent hallucinated stock predictions in general chat
+            final_query = (
+                f"{query}\n\n"
+                f"(IMPORTANT INSTRUCTIONS: Keep the answer moderate in length, approx 3-5 sentences. "
+                f"NEVER provide specific stock price predictions, forecasts, or numerical price targets. "
+                f"If the user asks for a stock prediction, tell them to use the prediction system by "
+                f"adding the stock to their portfolio and using Auto-Train first.)"
+            )
             
             response = chat.send_message(final_query)
             

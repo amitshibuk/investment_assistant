@@ -576,6 +576,7 @@
                         <th>Company</th>
                         <th class="text-right">Price</th>
                         <th class="text-right">Change</th>
+                        <th class="text-right">Add</th>
                     </tr>
                 </thead>
                 <tbody id="t15-body"></tbody>
@@ -782,12 +783,16 @@
             const d = await (await fetch('/api/live-tickers/')).json();
             const tape = document.getElementById('ticker-tape');
             if (!d.tickers?.length) return;
+
+            // Build a map of ticker -> data for quick lookup
+            const tapeMap = {};
             const chips = d.tickers.map(t => {
+                tapeMap[t.ticker] = t;
                 const col = t.is_up ? '#22c55e' : '#ef4444';
                 const arr = t.is_up ? '▲' : '▼';
                 const addB = t.in_portfolio ? '' : `<span class="chip-add" onclick="event.stopPropagation();addFromTape('${t.ticker}')" title="Add to portfolio">+</span>`;
 
-                // Also refresh the portfolio chip price label
+                // Also refresh the portfolio chip price label for tickers in tape
                 const priceEl = document.getElementById(`pticker-price-${t.ticker}`);
                 if (priceEl) {
                     priceEl.textContent = `$${t.price} ${t.is_up ? '+' : ''}${t.change_pct}%`;
@@ -801,6 +806,24 @@
       </span>`;
             }).join('');
             tape.innerHTML = chips + chips;
+
+            // Refresh prices for portfolio tickers NOT covered by the tape
+            const missingTickers = PTICKERS.filter(tk => !tapeMap[tk]);
+            if (missingTickers.length) {
+                missingTickers.forEach(async tk => {
+                    try {
+                        const dr = await fetch(`/api/portfolio-detail/${tk}/`);
+                        if (!dr.ok) return;
+                        const info = await dr.json();
+                        const priceEl = document.getElementById(`pticker-price-${tk}`);
+                        if (priceEl && info.current_price != null) {
+                            const up = info.change_pct >= 0;
+                            priceEl.textContent = `$${info.current_price} ${up ? '+' : ''}${info.change_pct}%`;
+                            priceEl.className = `px ${up ? 'up' : 'dn'}`;
+                        }
+                    } catch { }
+                });
+            }
         } catch { }
     }
 
@@ -816,12 +839,16 @@
             tb.innerHTML = '';
             (d.stocks || []).forEach((s, i) => {
                 const up = s.change_pct >= 0;
+                const alreadyIn = PTICKERS.includes(s.ticker);
+                const addBtn = alreadyIn
+                    ? `<td class="text-right"><span class="text-[10px] text-gray-600">✓</span></td>`
+                    : `<td class="text-right"><button onclick="addToPortfolio('${s.ticker}')" title="Add to portfolio" class="text-[10px] bg-cyan-900/30 hover:bg-cyan-700/40 border border-cyan-800/50 hover:border-cyan-500 text-cyan-400 hover:text-white px-2 py-0.5 rounded transition-all">+ Add</button></td>`;
                 const row = document.createElement('tr');
                 row.innerHTML = `<td class="text-gray-600">${i + 1}</td>
         <td class="font-bold text-cyan-400 font-mono cursor-pointer hover:text-white" onclick="loadTicker('${s.ticker}',null)">${s.ticker}</td>
         <td class="text-gray-400 max-w-[180px] truncate">${s.name}</td>
         <td class="text-right font-mono text-white">$${s.price.toLocaleString()}</td>
-        <td class="text-right font-mono ${up ? 'text-green-400' : 'text-red-400'}">${up ? '+' : ''}${s.change_pct}%</td>`;
+        <td class="text-right font-mono ${up ? 'text-green-400' : 'text-red-400'}">${up ? '+' : ''}${s.change_pct}%</td>${addBtn}`;
                 tb.appendChild(row);
             });
         } catch (e) { console.error(e); }
@@ -927,11 +954,29 @@
             if (data.predictions?.length) {
                 const inP = PTICKERS.includes(data.ticker);
                 const wb = inP ? `<span class="text-[10px] text-gray-500">✓ In Portfolio</span>` : `<button onclick="addToPortfolio('${data.ticker}')" class="text-[10px] text-cyan-300 hover:text-white">+Watch</button>`;
-                h += `<div class="border-t border-gray-700/50 pt-2 mt-2"><div class="flex justify-between items-center mb-1"><span class="text-[10px] font-bold text-cyan-400 uppercase">Forecast</span>${wb}</div>
-        <div class="grid grid-cols-3 gap-1">${data.predictions.slice(0, 3).map(p => `<div class="bg-gray-900/50 rounded p-1 text-center border border-gray-700/30"><div class="text-[9px] text-gray-500">Day ${p.day}</div><div class="text-xs font-mono text-white">$${p.predicted_close.toFixed(0)}</div></div>`).join('')}</div></div>`;
+                const cols = data.predictions.length <= 4 ? data.predictions.length : 4;
+                h += `<div class="border-t border-gray-700/50 pt-2 mt-2"><div class="flex justify-between items-center mb-1"><span class="text-[10px] font-bold text-cyan-400 uppercase">Forecast (${data.days_ahead} day${data.days_ahead !== 1 ? 's' : ''})</span>${wb}</div>
+        <div class="grid gap-1" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${data.predictions.map(p => `<div class="bg-gray-900/50 rounded p-1 text-center border border-gray-700/30"><div class="text-[9px] text-gray-500">Day ${p.day}</div><div class="text-xs font-mono text-white">$${p.predicted_close.toFixed(0)}</div></div>`).join('')}</div></div>`;
+            }
+            if (data.no_model && data.ticker) {
+                const inP = PTICKERS.includes(data.ticker);
+                h += `<div class="border-t border-amber-900/40 pt-2 mt-2 bg-amber-950/20 rounded-b -mx-3 -mb-3 px-3 pb-3">`;
+                h += `<div class="text-[10px] text-amber-400 font-bold uppercase mb-1.5">⚠ No trained model found</div>`;
+                h += `<div class="flex items-center gap-2 flex-wrap">`;
+                if (!inP) {
+                    h += `<button onclick="addToPortfolio('${data.ticker}')" class="text-[10px] bg-cyan-900/40 hover:bg-cyan-700/50 border border-cyan-700 text-cyan-300 hover:text-white px-2.5 py-1 rounded transition-all">+ Add ${data.ticker} to Portfolio</button>`;
+                } else {
+                    h += `<span class="text-[10px] text-gray-500">✓ Already in portfolio</span>`;
+                }
+                h += `<button onclick="CUR_TICKER='${data.ticker}';triggerTrain()" class="text-[10px] bg-gray-700/60 hover:bg-gray-600/60 border border-gray-600 text-gray-300 hover:text-white px-2.5 py-1 rounded transition-all">⚡ Auto-Train ${data.ticker}</button>`;
+                h += `</div></div>`;
             }
             h += '</div>'; w.innerHTML = h;
             box.appendChild(w); box.scrollTop = box.scrollHeight;
+            if (data.predictions?.length || data.no_model) {
+                switchTab('tab-a');
+                document.getElementById('ai-dot').classList.remove('hidden');
+            }
         }
     });
 </script>
