@@ -42,6 +42,11 @@ def train_and_save_model(ticker):
         print(f"❌ Not enough data for {ticker}. Skipping.")
         return
 
+    # Flatten MultiIndex columns (newer yfinance returns ('Close', 'AAPL') etc.)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    data = data.loc[:, ~data.columns.duplicated()]
+
     # 2. Prepare Data (UNIVARIATE FIX)
     # We only use 'Close' price. This fixes the recursion issue.
     dataset = data[['Close']].values.astype(float)
@@ -115,11 +120,16 @@ def load_and_predict(ticker, days_ahead=7):
     if data.empty:
         raise ValueError(f"No live data found for {ticker}")
 
+    # Handle MultiIndex columns from newer yfinance
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    data = data.loc[:, ~data.columns.duplicated()]
+
     # Prepare input (Must match training structure: 'Close' only)
-    dataset = data[['Close']].values.astype(float)
+    close_array = data['Close'].dropna().values.astype(float).reshape(-1, 1)
     
     # Scale using the LOADED scaler
-    scaled_data = scaler.transform(dataset)
+    scaled_data = scaler.transform(close_array)
 
     time_step = 60
     if len(scaled_data) < time_step:

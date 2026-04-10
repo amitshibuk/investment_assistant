@@ -1,15 +1,40 @@
 import json
+import math
 import os
 import pytz
 from datetime import datetime, time as dt_time
 import google.generativeai as genai
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from dotenv import load_dotenv
 import yfinance as yf
+
+
+class SafeJSONEncoder(json.JSONEncoder):
+    """JSON encoder that converts NaN and Infinity to None (null in JSON)."""
+    def default(self, obj):
+        return super().default(obj)
+
+    def encode(self, o):
+        return super().encode(self._sanitize(o))
+
+    def _sanitize(self, obj):
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        elif isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._sanitize(item) for item in obj]
+        return obj
+
+
+def SafeJsonResponse(data, **kwargs):
+    """JsonResponse that safely handles NaN/Infinity values."""
+    content = json.dumps(data, cls=SafeJSONEncoder)
+    return HttpResponse(content, content_type='application/json', **kwargs)
 
 # --- Imports from your src folder ---
 from .src.prediction_model import load_and_predict, train_and_save_model
@@ -272,7 +297,7 @@ def predict(request):
                 chat_history.append({"role": "model", "parts": [summary]})
                 request.session['gemini_chat_history'] = chat_history
 
-                return JsonResponse({
+                return SafeJsonResponse({
                     "company": company,
                     "ticker": ticker,
                     "days_ahead": days_ahead,
@@ -444,7 +469,7 @@ def get_portfolio_data(request, ticker):
         if not chart_data:
              return JsonResponse({"error": "No data found"}, status=404)
 
-        return JsonResponse({
+        return SafeJsonResponse({
             "ticker": ticker,
             "period": period,
             "chart_data": chart_data

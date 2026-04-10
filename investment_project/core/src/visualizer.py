@@ -32,6 +32,8 @@ def generate_interactive_chart(ticker, predicted_prices):
     # Flatten MultiIndex columns
     if isinstance(history.columns, pd.MultiIndex):
         history.columns = history.columns.get_level_values(0)
+    # Remove duplicate columns (keep first occurrence)
+    history = history.loc[:, ~history.columns.duplicated()]
 
     history = history.reset_index()
 
@@ -124,7 +126,20 @@ def generate_interactive_chart(ticker, predicted_prices):
     )
 
     from plotly.utils import PlotlyJSONEncoder
-    return json.loads(json.dumps(fig, cls=PlotlyJSONEncoder))
+    import math
+
+    def sanitize_nans(obj):
+        """Recursively replace NaN/Infinity with None for valid JSON."""
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        elif isinstance(obj, dict):
+            return {k: sanitize_nans(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [sanitize_nans(item) for item in obj]
+        return obj
+
+    raw = json.loads(json.dumps(fig, cls=PlotlyJSONEncoder))
+    return sanitize_nans(raw)
 
 
 def generate_candlestick_chart(ticker, period='5d'):
@@ -141,6 +156,8 @@ def generate_candlestick_chart(ticker, period='5d'):
 
         if isinstance(history.columns, pd.MultiIndex):
             history.columns = history.columns.get_level_values(0)
+        # Remove duplicate columns (keep first occurrence)
+        history = history.loc[:, ~history.columns.duplicated()]
 
         history = history.reset_index()
         history = history.dropna(subset=['Open', 'High', 'Low', 'Close'])
@@ -249,7 +266,20 @@ def generate_candlestick_chart(ticker, period='5d'):
             margin=dict(l=50, r=60, t=60, b=50),
         )
 
-        return json.loads(fig.to_json())
+        import math
+
+        def sanitize_nans(obj):
+            """Recursively replace NaN/Infinity with None for valid JSON."""
+            if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                return None
+            elif isinstance(obj, dict):
+                return {k: sanitize_nans(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [sanitize_nans(item) for item in obj]
+            return obj
+
+        raw = json.loads(fig.to_json())
+        return sanitize_nans(raw)
 
     except Exception as e:
         print(f"DEBUG: Error generating chart: {e}")
